@@ -1,0 +1,4 @@
+.PHONY: python-format
+python-format:
+    isort .
+    black .

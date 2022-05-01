@@ -1,0 +1,37 @@
+[tool.poetry]
+name = "scalbot"
+version = "0.1.0"
+description = "Scalping Bot Project to get rich *sure*"
+authors = ["Tom Jansen <tomjansen25@gmail.com>"]
+
+[tool.poetry.dependencies]
+python = "3.9"
+pandas = "^1.4.1"
+pybit = "^2.1.0"
+plotly = "^5.6.0"
+python-dotenv = "^0.19.2"
+pydantic = "^1.9.0"
+loguru = "^0.6.0"
+google-cloud-bigquery = "^3.0.1"
+db-dtypes = "^1.0.0"
+
+[tool.poetry.dev-dependencies]
+pytest = "^5.2"
+pylint = "^2.12.2"
+mypy = "^0.931"
+black = "^22.3.0"
+isort = "^5.10.1"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+
+[tool.mypy]
+ignore_missing_imports = true
+
+[tool.pylint]
+good-names = 'df, ws'
