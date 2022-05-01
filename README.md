@@ -10,7 +10,7 @@ A Scalping Bot implemented in Python.
 ```shell
 git clone https://github.com/TomJansen25/scalbot.git
 cd scalbot
-poetry install --no-dev 
+poetry install --no-dev
 ```
 
 ### Executing program

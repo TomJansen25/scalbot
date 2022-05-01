@@ -10,4 +10,3 @@ class Symbol(Enum):
     BTCUSD = "BTCUSD"
     ETHUSD = "ETHUSD"
     XRPUSD = "XRPUSD"
-    

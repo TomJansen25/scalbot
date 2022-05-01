@@ -16,9 +16,7 @@ class BigQuery(ABC, BaseModel):
         arbitrary_types_allowed = True
 
     def __init__(self):
-        super().__init__(
-            client=Client()
-        )
+        super().__init__(client=Client())
 
     def get_last_trade(self, symbol: Symbol, broker: Broker) -> Trade:
         """

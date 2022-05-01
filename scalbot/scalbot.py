@@ -17,9 +17,14 @@ from scalbot.bybit import Bybit
 from scalbot.enums import Symbol
 from scalbot.technical_indicators import calc_sma
 from scalbot.trades import TradingStrategy
-from scalbot.utils import (calc_candle_colors, get_last_trade,
-                           get_latest_candle, get_percentage_occurrences,
-                           get_project_dir, is_subdict)
+from scalbot.utils import (
+    calc_candle_colors,
+    get_last_trade,
+    get_latest_candle,
+    get_percentage_occurrences,
+    get_project_dir,
+    is_subdict,
+)
 
 PROJECT_DIR = get_project_dir()
 
