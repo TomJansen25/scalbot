@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 
 class OpenPosition(BaseModel):
     """
-    Open Position Model that returns the size/quantity information about the currently position of a Symbol
+    Open Position Model that returns the size/quantity information about the current position of a Symbol
     """
 
     size: int = Field(

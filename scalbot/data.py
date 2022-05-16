@@ -1,0 +1,168 @@
+import tempfile
+from abc import ABC
+from datetime import date, datetime
+from pathlib import Path
+from urllib.request import urlretrieve
+
+import pandas as pd
+import requests
+from bs4 import BeautifulSoup as bs
+from loguru import logger
+from plotly.graph_objects import Candlestick, Figure
+from pydantic import BaseModel, Field, validator
+
+from scalbot.bybit import Bybit
+from scalbot.enums import Broker, Symbol
+
+
+class BybitDataModel(BaseModel):
+    start: datetime = Field(datetime.now())
+    end: datetime = Field(datetime.now())
+    open: float
+    close: float
+    low: float
+    high: float
+    volume: int
+    turnover: float
+    timestamp: int
+    confirm: bool
+    cross_seq: int
+    symbol: str
+    topic: str
+
+    @validator("symbol")
+    def valid_symbol(cls, symbol):
+        if symbol not in [c.value for c in Symbol]:
+            raise ValueError(f"invalid symbol ({symbol}) provided")
+        return symbol
+
+
+class Data(ABC, BaseModel):
+    """
+    Base Data Class
+    """
+
+    candle_frequency: int = Field(default=1, ge=1, le=60)
+    symbol: Symbol = Symbol.BTCUSD
+    broker: Broker = Broker.BYBIT
+    candles: pd.DataFrame = None
+
+    class Config:
+        arbitrary_types_allowed = True
+
+    def __init__(
+        self,
+        candle_frequency: int = 1,
+        symbol: Symbol = Symbol.BTCUSD,
+        broker: Broker = Broker.BYBIT,
+    ):
+
+        super().__init__(
+            candle_frequency=candle_frequency,
+            symbol=symbol,
+            broker=broker,
+        )
+
+    def plot_candlesticks(self, symbol: Symbol = Symbol.BTCUSD) -> Figure:
+
+        df = self.candles.loc[self.candles.symbol == symbol].copy()
+
+        fig = Figure()
+
+        fig.add_trace(
+            Candlestick(
+                name=symbol,
+                x=df.start,
+                open=df.open,
+                close=df.close,
+                high=df.high,
+                low=df.low,
+            )
+        )
+
+        fig.update_layout(
+            xaxis_rangeslider_visible=False,
+        )
+
+        return fig
+
+    def resample_candles(self, new_frequency: int = 3):
+        """
+
+        :param new_frequency:
+        """
+        df = self.candles.set_index(self.candles.start, drop=True).copy()
+        ohlc = {
+            "open": "first",
+            "high": "max",
+            "low": "min",
+            "close": "last",
+            "volume": "sum",
+        }
+        new_df = df.resample(f"{new_frequency}min").apply(ohlc).reset_index()
+        self.candles = new_df
+
+
+class HistoricData(Data):
+    """
+    Historic Data Class to retrieve full and partial historic data for several Symbols and Brokers
+    """
+
+    bybit_data_url = "https://public.bybit.com/spot_index/"
+
+    def is_symbol_data_to_download(self):
+        if self.broker == Broker.BYBIT:
+            res = requests.get(self.bybit_data_url)
+            soup = bs(res.content, "html.parser")
+            available_symbols = soup.find_all("a", href=True)
+
+            symbol_link = next(
+                filter(lambda x: self.symbol.value in x.text, available_symbols), None
+            )
+            return bool(symbol_link)
+        else:
+            logger.warn(f"Only Bybit is implemented so far, other brokers not yet...")
+            return False
+
+    def retrieve_historic_data(self):
+        """
+        Retrieve full historic data if not in Class yet, otherwise directly return
+        :return:
+        """
+        if not self.candles:
+            logger.info(
+                f"Retrieving full historical data for {self.symbol.value} from {self.broker.value}..."
+            )
+            if self.is_symbol_data_to_download():
+                symbol_url = f"{self.bybit_data_url}{self.symbol.value}/"
+
+                res = requests.get(symbol_url)
+                soup = bs(res.content, "html.parser")
+                downloads = soup.find_all("a", href=True)
+
+                results = []
+
+                for download in downloads:
+                    url = f'{symbol_url}{download["href"]}'
+                    logger.info(f"Processing {url} ...")
+
+                    with tempfile.TemporaryDirectory() as tmp_dir_name:
+                        tmp_file_name = "tmp_index_prices.csv.gz"
+                        tmp_file_path = Path(tmp_dir_name, tmp_file_name)
+
+                        data = requests.get(url).content
+                        urlretrieve(url, tmp_file_path)
+
+                        df = pd.read_csv(tmp_file_path, compression="gzip")
+                        results.append(df)
+
+                    logger.info(f"Finished retrieving data for {download.text}!")
+
+                full_df = pd.concat(results, ignore_index=True).sort_values(
+                    by="start_at", ascending=True
+                )
+                self.candles = full_df
+        else:
+            logger.info(
+                f"Full historical data for {self.symbol.value} from {self.broker.value} already loaded"
+            )
