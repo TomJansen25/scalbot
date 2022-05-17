@@ -1,7 +1,8 @@
 import tempfile
 from abc import ABC
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import Optional
 from urllib.request import urlretrieve
 
 import pandas as pd
@@ -45,7 +46,7 @@ class Data(ABC, BaseModel):
     candle_frequency: int = Field(default=1, ge=1, le=60)
     symbol: Symbol = Symbol.BTCUSD
     broker: Broker = Broker.BYBIT
-    candles: pd.DataFrame = None
+    candles: Optional[pd.DataFrame] = None
 
     class Config:
         arbitrary_types_allowed = True
@@ -63,15 +64,32 @@ class Data(ABC, BaseModel):
             broker=broker,
         )
 
-    def plot_candlesticks(self, symbol: Symbol = Symbol.BTCUSD) -> Figure:
+    def change_symbol(self, symbol: Symbol = Symbol.BTCUSD):
+        """
 
-        df = self.candles.loc[self.candles.symbol == symbol].copy()
+        :param symbol:
+        """
+        if symbol != self.symbol:
+            self.symbol = symbol
+            self.candles = None
+
+    def plot_candlesticks(self) -> Figure:
+        """
+
+        :return:
+        """
+        if self.candles is None:
+            msg = "No candle history is set yet, data should first be retrieved"
+            logger.error(msg)
+            raise Warning(msg)
+
+        df = self.candles.loc[self.candles.symbol == self.symbol.value].copy()
 
         fig = Figure()
 
         fig.add_trace(
             Candlestick(
-                name=symbol,
+                name=self.symbol.value,
                 x=df.start,
                 open=df.open,
                 close=df.close,
@@ -81,6 +99,7 @@ class Data(ABC, BaseModel):
         )
 
         fig.update_layout(
+            title=f"Candle data for {self.symbol.value} from {self.broker.value}",
             xaxis_rangeslider_visible=False,
         )
 
@@ -124,14 +143,15 @@ class HistoricData(Data):
             logger.warn(f"Only Bybit is implemented so far, other brokers not yet...")
             return False
 
-    def retrieve_historic_data(self):
+    def retrieve_historic_data(self) -> pd.DataFrame:
         """
         Retrieve full historic data if not in Class yet, otherwise directly return
-        :return:
+        :return: (pd.DataFrame) with full candle history from Symbol
         """
         if not self.candles:
             logger.info(
-                f"Retrieving full historical data for {self.symbol.value} from {self.broker.value}..."
+                f"Retrieving full historical data for {self.symbol.value} "
+                f"from {self.broker.value}..."
             )
             if self.is_symbol_data_to_download():
                 symbol_url = f"{self.bybit_data_url}{self.symbol.value}/"
@@ -161,8 +181,13 @@ class HistoricData(Data):
                 full_df = pd.concat(results, ignore_index=True).sort_values(
                     by="start_at", ascending=True
                 )
+                full_df["start"] = pd.to_datetime(full_df.start_at, unit="s")
+                full_df["end"] = full_df.start + timedelta(minutes=1)
                 self.candles = full_df
         else:
             logger.info(
-                f"Full historical data for {self.symbol.value} from {self.broker.value} already loaded"
+                f"Full historical data for {self.symbol.value} from {self.broker.value} is already "
+                f"loaded and will be returned directly"
             )
+
+        return self.candles
