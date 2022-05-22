@@ -1,4 +1,5 @@
 from abc import ABC
+from typing import Union
 
 import pandas as pd
 from google.cloud.bigquery import Client
@@ -18,7 +19,9 @@ class BigQuery(ABC, BaseModel):
     def __init__(self):
         super().__init__(client=Client())
 
-    def get_last_trade(self, symbol: Symbol, broker: Broker) -> Trade:
+    def get_last_trade(
+        self, symbol: Union[Symbol, str], broker: Union[Broker, str]
+    ) -> Trade:
         """
 
         :param symbol:

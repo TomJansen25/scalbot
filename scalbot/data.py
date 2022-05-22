@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.request import urlretrieve
 
+import numpy as np
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup as bs
@@ -12,7 +13,6 @@ from loguru import logger
 from plotly.graph_objects import Candlestick, Figure
 from pydantic import BaseModel, Field, validator
 
-from scalbot.bybit import Bybit
 from scalbot.enums import Broker, Symbol
 
 
@@ -191,3 +191,29 @@ class HistoricData(Data):
             )
 
         return self.candles
+
+
+def calc_candle_colors(df: pd.DataFrame, shift: int = 10) -> pd.DataFrame:
+    """
+
+    :param df:
+    :param shift:
+    :return:
+    """
+    df = df.copy()
+    df["color"] = np.where(df.close > df.open, "green", "red")
+
+    for shift_index in range(1, shift + 1):
+        df[f"prev_{shift_index}"] = df.color.shift(shift_index)
+
+    return df
+
+
+def get_latest_candle(df: pd.DataFrame, col: str = "start") -> dict:
+    """
+    Retrieve the latest candle of a DataFrame based on the provided column (default = 'start')
+    :param df:
+    :param col:
+    :return: Latest Candle as dictionary
+    """
+    return df.loc[df[col] == df[col].max()].squeeze().to_dict()
