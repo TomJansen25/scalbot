@@ -6,7 +6,7 @@ from uuid import uuid4
 import numpy as np
 from pydantic import BaseModel, Field
 
-from scalbot.models import Trade
+from scalbot.models import Candle, Trade
 from scalbot.utils import setup_logging
 
 setup_logging()
@@ -64,44 +64,44 @@ class TradingStrategy(ABC, BaseModel):
             take_profit_3_share=take_profit_3_share,
         )
 
-    def define_trade(self, trade: str, candle: dict, pattern: dict) -> Trade:
+    def define_trade(self, trade_side: str, candle: Candle, pattern: dict) -> Trade:
         """
 
-        :param trade:
+        :param trade_side:
         :param candle:
         :param pattern:
         :return:
         """
-        if trade not in ["short", "long"]:
+        if trade_side not in ["short", "long"]:
             raise KeyError(
-                f"Provided trade value ({trade}) is not supported. Either choose "
+                f"Provided trade value ({trade_side}) is not supported. Either choose "
                 f'"short" or "long"...'
             )
 
         logging.info(f"Defining trade based on following candle: {candle}")
 
-        if trade == "short":
-            price: float = candle.get("low")
+        if trade_side == "short":
+            price = candle.low
             stop_loss = price + (price * self.stop_loss)
             tp1 = price - (price * self.take_profit_1)
             tp2 = price - (price * self.take_profit_2)
             tp3 = price - (price * self.take_profit_3)
         else:
-            price: float = candle.get("high")
+            price = candle.high
             stop_loss = price - (price * self.stop_loss)
             tp1 = price + (price * self.take_profit_1)
             tp2 = price + (price * self.take_profit_2)
             tp3 = price + (price * self.take_profit_3)
 
         quantity_usd = int(self.bet_amount * (self.risk / self.stop_loss))
-        side = "Buy" if trade == "long" else "Sell"
+        side = "Buy" if trade_side == "long" else "Sell"
 
         return Trade(
             timestamp=datetime.now(),
-            source_candle=candle.get("start"),
+            source_candle=candle.start,
             pattern=pattern,
             side=side,
-            symbol=candle.get("symbol"),
+            symbol=candle.symbol,
             price=price,
             quantity_usd=quantity_usd,
             position_size=quantity_usd / price,

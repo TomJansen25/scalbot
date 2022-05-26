@@ -10,23 +10,16 @@ from typing import Optional, Tuple, Union
 
 import pandas as pd
 from loguru import logger
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field
 
 from scalbot.bigquery import BigQuery
 from scalbot.bybit import Bybit
+from scalbot.data import calc_candle_colors, get_latest_candle
 from scalbot.enums import Symbol
-from scalbot.models import OpenPosition, Trade
+from scalbot.models import Candle, OpenPosition, Trade
 from scalbot.technical_indicators import calc_sma
 from scalbot.trades import TradingStrategy
-from scalbot.utils import (
-    calc_candle_colors,
-    get_latest_candle,
-    get_percentage_occurrences,
-    get_project_dir,
-    is_subdict,
-)
-
-PROJECT_DIR = get_project_dir()
+from scalbot.utils import get_percentage_occurrences, is_subdict
 
 
 class Scalbot(BaseModel, ABC):
@@ -119,13 +112,15 @@ class Scalbot(BaseModel, ABC):
                             symbol=symbol,
                             open_position=open_position,
                             trade=trade,
-                            fill_take_profits=False,
+                            fill_take_profit=False,
                         )
 
                     matched_orders = self.match_open_orders_to_trade(
                         position=open_position, orders=new_limit_orders, trade=trade
                     )
-                    print(matched_orders)
+
+                    logger.info(f"Matched orders: {matched_orders}")
+
                     for tp_level, level_set in matched_orders.items():
                         if level_set == "order_not_set":
                             side = "Sell" if trade.side == "Buy" else "Buy"
@@ -165,14 +160,16 @@ class Scalbot(BaseModel, ABC):
                         candle = get_latest_candle(df=df)
                         (
                             make_trade,
-                            trade,
+                            trade_side,
                             pattern,
                             trade_candle,
                         ) = self.evaluate_candle(candle=candle, df=df)
 
                         if make_trade:
                             new_trade = self.trading_strategy.define_trade(
-                                trade=trade, candle=trade_candle, pattern=pattern
+                                trade_side=trade_side,
+                                candle=trade_candle,
+                                pattern=pattern,
                             )
                             logger.info(
                                 f"Pattern found and new trade calculated: {new_trade.dict()}"
@@ -193,14 +190,6 @@ class Scalbot(BaseModel, ABC):
 
                             self.bigquery_client.insert_trade_to_bigquery(
                                 trade=new_trade
-                            )
-
-                            df = pd.DataFrame(new_trade.dict(), index=[0])
-                            df.to_csv(
-                                PROJECT_DIR.joinpath("data", "trades.csv"),
-                                index=False,
-                                header=False,
-                                mode="a",
                             )
                     else:
                         logger.info(
@@ -223,8 +212,7 @@ class Scalbot(BaseModel, ABC):
             )
             if total_take_profit_size >= position.size:
                 break
-            else:
-                required_take_profits.append(level)
+            required_take_profits.append(level)
             total_take_profit_size += tp_size
 
         return required_take_profits
@@ -276,7 +264,7 @@ class Scalbot(BaseModel, ABC):
         return matched_orders
 
     @staticmethod
-    def find_candle_pattern(candle: dict, patterns: list) -> Union[dict, None]:
+    def find_candle_pattern(candle: Candle, patterns: list[dict]) -> Optional[dict]:
         """
         Compares the color pattern of a candle (as a dict) and checks whether it matches one
         of the specified patterns.
@@ -286,8 +274,9 @@ class Scalbot(BaseModel, ABC):
         :return: dictionary with matching pattern or None if no match
         """
         found_pattern = None
+        candle_pattern = {"color": candle.color} | candle.previous_colors
         for pattern in patterns:
-            if is_subdict(pattern, candle):
+            if is_subdict(pattern, candle_pattern):
                 logger.info(f"Found matching pattern: {pattern}")
                 found_pattern = pattern
                 break
@@ -316,16 +305,15 @@ class Scalbot(BaseModel, ABC):
         return trade
 
     @staticmethod
-    def get_previous_trend(
-        candle_colors: Optional[dict], v_pattern: Optional[dict]
-    ) -> Optional[dict]:
+    def get_previous_trend(candle: Candle, v_pattern: Optional[dict]) -> Optional[dict]:
         """
 
-        :param candle_colors:
+        :param candle:
         :param v_pattern:
         :return:
         """
-        if candle_colors and v_pattern:
+        candle_colors = {"color": candle.color} | candle.previous_colors
+        if v_pattern:
             remaining_previous_candles = {
                 k: v for k, v in candle_colors.items() if k not in v_pattern
             }
@@ -366,7 +354,7 @@ class Scalbot(BaseModel, ABC):
             else:
                 trade = None
                 logger.info(
-                    f"In the previous candles, no obvious trend could be detected"
+                    "In the previous candles, no obvious trend could be detected"
                 )
         else:
             trade = None
@@ -376,7 +364,7 @@ class Scalbot(BaseModel, ABC):
     @staticmethod
     def make_trade(
         trade_side_v_pattern: Optional[str],
-        trade_side_sma: str,
+        trade_side_sma: Optional[str],
         trade_side_prev_trend: Optional[str],
     ) -> Tuple[bool, Optional[str]]:
         """
@@ -386,7 +374,7 @@ class Scalbot(BaseModel, ABC):
         :param trade_side_prev_trend:
         :return:
         """
-        if trade_side_v_pattern == trade_side_sma == trade_side_prev_trend:
+        if trade_side_v_pattern == trade_side_sma == trade_side_prev_trend is not None:
             make_trade = True
             trade_side = trade_side_sma
             logger.info(
@@ -397,12 +385,14 @@ class Scalbot(BaseModel, ABC):
         else:
             make_trade = False
             trade_side = None
-            logger.info(f"Not all calculated trade sides agree, no trade will be made!")
+            logger.info("Not all calculated trade sides agree, no trade will be made!")
 
         return make_trade, trade_side
 
     @logger.catch
-    def get_turning_point(self, candle: dict, pattern: dict, df: pd.DataFrame) -> dict:
+    def get_turning_point(
+        self, candle: Candle, pattern: dict, df: pd.DataFrame
+    ) -> Candle:
         """
 
         :param candle:
@@ -410,55 +400,59 @@ class Scalbot(BaseModel, ABC):
         :param df:
         :return:
         """
-        start: datetime = candle.get("start")
         last_key = list(pattern)[-1]
         prev_minutes = int(last_key[-1]) - 1
-        turning_point_candle = (
+        turning_point = (
             df.loc[
                 df.start
-                == start - timedelta(minutes=prev_minutes * self.candle_frequency),
-                ["start", "end", "open", "close", "high", "low", "symbol"],
+                == candle.start
+                - timedelta(minutes=prev_minutes * self.candle_frequency),
             ]
             .squeeze()
             .to_dict()
         )
-
+        turning_point_candle = Candle.parse_obj(turning_point)
         return turning_point_candle
 
     @logger.catch
     def evaluate_candle(
-        self, candle: dict, df: pd.DataFrame
-    ) -> Tuple[Optional[bool], str, Optional[dict], Optional[dict]]:
+        self, candle: Candle, df: pd.DataFrame
+    ) -> Tuple[bool, Optional[str], Optional[dict], Optional[Candle]]:
         """
 
         :param candle:
         :param df:
         :return:
         """
-        candle_colors = {
-            k: v for k, v in candle.items() if k == "color" or k.startswith("prev_")
-        }
-        v_pattern = self.find_candle_pattern(candle_colors, self.patterns)
+        logger.info(f"Evaluating the following candle: {candle}")
+        # candle_colors = {"color": candle.color} | candle.previous_colors
+        v_pattern = self.find_candle_pattern(candle, self.patterns)
 
         trade_side_v_pattern = self.define_trade_side(v_pattern)
-        price_vs_sma = candle.get("close") - candle.get("sma")
-        trade_side_sma = "short" if price_vs_sma > 0 else "long"
 
-        previous_trend = self.get_previous_trend(candle_colors, v_pattern)
+        turning_point_candle = None
+        trade_side_sma = None
+        if v_pattern:
+            turning_point_candle = self.get_turning_point(candle, v_pattern, df)
+
+            if trade_side_v_pattern == "short":
+                price = turning_point_candle.low
+            else:
+                price = turning_point_candle.high
+
+            price_vs_sma = price - turning_point_candle.sma
+            trade_side_sma = "short" if price_vs_sma > 0 else "long"
+
+            logger.info(
+                f"Trade price would be {price}, and candle SMA 9 = {turning_point_candle.sma}, so "
+                f"Price vs. SMA = {price_vs_sma}, which hints towards a {trade_side_sma} trade"
+            )
+
+        previous_trend = self.get_previous_trend(candle, v_pattern)
         trade_side_prev_trend = self.get_previous_trend_trade_side(previous_trend)
 
         make_trade, trade_side = self.make_trade(
             trade_side_v_pattern, trade_side_sma, trade_side_prev_trend
         )
-
-        turning_point_candle = None
-        if make_trade:
-            turning_point_candle = self.get_turning_point(candle, v_pattern, df)
-            turning_point_candle["trade"] = trade_side
-            turning_point_candle["pattern"] = json.dumps(v_pattern)
-            turning_point_candle["source_candle_start"] = candle.get("start")
-            logger.info(
-                "V Pattern, previous trend, and turning point found and defined!"
-            )
 
         return make_trade, trade_side, v_pattern, turning_point_candle

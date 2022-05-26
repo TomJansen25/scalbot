@@ -1,6 +1,6 @@
 import tempfile
 from abc import ABC
-from datetime import date, datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Optional
 from urllib.request import urlretrieve
@@ -11,31 +11,10 @@ import requests
 from bs4 import BeautifulSoup as bs
 from loguru import logger
 from plotly.graph_objects import Candlestick, Figure
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field
 
 from scalbot.enums import Broker, Symbol
-
-
-class BybitDataModel(BaseModel):
-    start: datetime = Field(datetime.now())
-    end: datetime = Field(datetime.now())
-    open: float
-    close: float
-    low: float
-    high: float
-    volume: int
-    turnover: float
-    timestamp: int
-    confirm: bool
-    cross_seq: int
-    symbol: str
-    topic: str
-
-    @validator("symbol")
-    def valid_symbol(cls, symbol):
-        if symbol not in [c.value for c in Symbol]:
-            raise ValueError(f"invalid symbol ({symbol}) provided")
-        return symbol
+from scalbot.models import Candle
 
 
 class Data(ABC, BaseModel):
@@ -110,16 +89,20 @@ class Data(ABC, BaseModel):
 
         :param new_frequency:
         """
-        df = self.candles.set_index(self.candles.start, drop=True).copy()
-        ohlc = {
-            "open": "first",
-            "high": "max",
-            "low": "min",
-            "close": "last",
-            "volume": "sum",
-        }
-        new_df = df.resample(f"{new_frequency}min").apply(ohlc).reset_index()
-        self.candles = new_df
+        if isinstance(self.candles, pd.DataFrame):
+            df = self.candles.set_index(self.candles.start, drop=True).copy()
+            ohlc = {
+                "open": "first",
+                "high": "max",
+                "low": "min",
+                "close": "last",
+            }
+            if "volume" in df.columns:
+                ohlc["volume"] = "sum"
+            new_df = df.resample(f"{new_frequency}min").apply(ohlc).reset_index()
+            self.candles = new_df
+        else:
+            raise Warning("No data in candles object yet, first load a DataFrame!")
 
 
 class HistoricData(Data):
@@ -204,16 +187,22 @@ def calc_candle_colors(df: pd.DataFrame, shift: int = 10) -> pd.DataFrame:
     df["color"] = np.where(df.close > df.open, "green", "red")
 
     for shift_index in range(1, shift + 1):
-        df[f"prev_{shift_index}"] = df.color.shift(shift_index)
+        df[f"prev_color_{shift_index}"] = df.color.shift(shift_index)
 
+    df["previous_colors"] = df.apply(
+        lambda x: {k: v for k, v in x.squeeze().items() if k.startswith("prev_color_")},
+        axis=1,
+    )
     return df
 
 
-def get_latest_candle(df: pd.DataFrame, col: str = "start") -> dict:
+def get_latest_candle(df: pd.DataFrame, col: str = "start") -> Candle:
     """
     Retrieve the latest candle of a DataFrame based on the provided column (default = 'start')
     :param df:
     :param col:
     :return: Latest Candle as dictionary
     """
-    return df.loc[df[col] == df[col].max()].squeeze().to_dict()
+    latest_candle = df.loc[df[col] == df[col].max()].squeeze().to_dict()
+    candle = Candle.parse_obj(latest_candle)
+    return candle
