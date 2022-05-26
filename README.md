@@ -22,11 +22,22 @@ poetry shell
 python run_bot.py
 ```
 
-## Deploy on GCP
+## GCP Implentation
+
+#### Initial Deployment
 ```shell
-gcloud pubsub topics create TOPICNAME
-gcloud scheduler jobs create pubsub JOBNAME --schedule "* * * * *" --topic TOPICNAME --message-body "EARN MONEY" --location europe-west3
-gcloud functions deploy FUNCTIONNAME --entry-point execute-me --region europe-west3 --runtime python39 --trigger-topic TOPICNAME
+$TOPICNAME = scalbot-topic-123
+$JOBNAME = scalbot-job-123
+gcloud pubsub topics create $TOPICNAME
+gcloud scheduler jobs create pubsub $JOBNAME --schedule "* * * * *" --topic $TOPICNAME --message-body "EARN MONEY" --location europe-west3
+gcloud functions deploy FUNCTIONNAME --entry-point ENTRYFUNCTION --region europe-west3 --runtime python39 --trigger-topic $TOPICNAME
+```
+
+#### Continuous Deployment
+```shell
+gcloud scheduler jobs pause $JOBNAME
+gcloud functions deploy scalbot-init-func --entry-point ENTRYFUNCTION --runtime python39 --trigger-topic $TOPICNAME
+gcloud scheduler jobs resume $JOBNAME
 ```
 
 ## Authors

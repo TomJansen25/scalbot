@@ -9,6 +9,10 @@ tests/
 scalbot-bigquery-0c6af48e6222.json
 
 
+### Poetry stuff
+poetry.lock
+pyproject.toml
+
 ### Python template
 # Byte-compiled / optimized / DLL files
 __pycache__/
