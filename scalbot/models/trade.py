@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional, Union
 from uuid import UUID, uuid4
 
+import numpy as np
 from pydantic import UUID4, BaseModel, Field, root_validator, validator
 
 from scalbot.enums import Broker, Symbol
@@ -45,7 +46,11 @@ class Trade(BaseModel):
         tp1_share = values.get("take_profit_1_share")
         tp2_share = values.get("take_profit_2_share")
         tp3_share = values.get("take_profit_3_share")
-        assert int(tp1_share + tp2_share + tp3_share) == 1
+        total_tp_share = tp1_share + tp2_share + tp3_share
+        if np.round(total_tp_share) != 1:
+            raise ValueError(
+                f"Sum of all TP Shares does not amount to 1, but to {total_tp_share}"
+            )
         return values
 
     @validator("order_link_id")

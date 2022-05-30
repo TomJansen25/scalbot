@@ -11,9 +11,9 @@ import requests
 from loguru import logger
 from pybit.inverse_perpetual import HTTP, WebSocket
 
+from scalbot.bigquery import BigQuery
 from scalbot.enums import Broker, Symbol
 from scalbot.models import BybitResponse, OpenPosition, Trade
-from scalbot.utils import get_last_trade
 
 
 class Bybit:
@@ -155,11 +155,11 @@ class Bybit:
         result = response.json()
         response.close()
 
-        result = BybitResponse.parse_obj(result)
-        if not result:
+        bybit_response = BybitResponse.parse_obj(result)
+        if not bybit_response:
             raise KeyError(f"The result of the response is empty... :(")
 
-        return result
+        return bybit_response
 
     def get_wallet_balance(self, symbol: Optional[str] = None) -> dict:
         """
@@ -494,7 +494,8 @@ class Bybit:
             open_position = self.get_open_position(symbol=symbol)
 
         if not trade:
-            trade = get_last_trade(symbol=symbol, broker=self.broker.value)
+            bigquery = BigQuery()
+            trade = bigquery.get_last_trade(symbol=symbol, broker=self.broker.value)
 
         tps, sls = self.get_untriggered_take_profits_and_stop_losses(symbol=symbol)
 
