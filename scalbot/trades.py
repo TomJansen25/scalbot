@@ -26,12 +26,12 @@ class TradingStrategy(ABC, BaseModel):
     risk: float = Field(
         default=0.01, gt=0, title="Risk", description="Percentual risk to be used"
     )
-    stop_loss: float = Field(default=0.0025, ge=0, le=1)
-    take_profit_1: float = Field(default=0.0025, ge=0, le=1)
+    stop_loss: float = Field(default=0.0035, ge=0, le=1)
+    take_profit_1: float = Field(default=0.0035, ge=0, le=1)
     take_profit_1_share: float = Field(default=0.4, gt=0, le=1)
-    take_profit_2: float = Field(default=0.0050, ge=0, le=1)
+    take_profit_2: float = Field(default=0.0060, ge=0, le=1)
     take_profit_2_share: float = Field(default=0.3, ge=0, lt=1)
-    take_profit_3: float = Field(default=0.0075, ge=0, le=1)
+    take_profit_3: float = Field(default=0.0080, ge=0, le=1)
     take_profit_3_share: float = Field(default=0.3, ge=0, lt=1)
 
     def __init__(
@@ -39,17 +39,17 @@ class TradingStrategy(ABC, BaseModel):
         *,
         bet_amount: float,
         risk: float,
-        stop_loss: float = 0.0025,
-        take_profit_1: float = 0.0025,
+        stop_loss: float = 0.0035,
+        take_profit_1: float = 0.0035,
         take_profit_1_share: float = 0.40,
-        take_profit_2: float = 0.0050,
+        take_profit_2: float = 0.0060,
         take_profit_2_share: float = 0.30,
-        take_profit_3: float = 0.0075,
+        take_profit_3: float = 0.0080,
         take_profit_3_share: float = 0.30,
     ):
         if take_profit_1_share + take_profit_2_share + take_profit_3_share > 1:
             raise ValueError(
-                "Shares of TP Shares cannot exceed 1 (e.g. 100%) together."
+                "Shares of TP Shares cannot exceed 1 (i.e., 100%) together."
             )
 
         super().__init__(

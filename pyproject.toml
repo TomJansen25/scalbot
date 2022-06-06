@@ -16,6 +16,7 @@ google-cloud-bigquery = "^3.0.1"
 db-dtypes = "^1.0.0"
 beautifulsoup4 = "^4.11.1"
 python-dateutil = "^2.8.2"
+optuna = "^2.10.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
@@ -25,6 +26,7 @@ black = "^22.3.0"
 isort = "^5.10.1"
 pre-commit = "^2.18.1"
 types-requests = "^2.27.28"
+types-python-dateutil = "^2.8.17"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
