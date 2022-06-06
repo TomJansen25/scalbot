@@ -1,5 +1,7 @@
+import json
 from abc import ABC
-from typing import Union
+from datetime import datetime
+from typing import Optional, Union
 
 import pandas as pd
 from google.cloud.bigquery import Client
@@ -18,6 +20,26 @@ class BigQuery(ABC, BaseModel):
 
     def __init__(self):
         super().__init__(client=Client())
+
+    def get_today_trades(
+        self, symbols: Optional[list] = None, brokers: Optional[list] = None
+    ) -> pd.DataFrame:
+
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        qry = f"""
+        SELECT *
+        FROM `scalbot.trades.active_trades`
+        WHERE timestamp >= '{today}'
+        ORDER BY timestamp asc;
+        """
+
+        df = self.client.query(qry).to_dataframe()
+        if symbols:
+            df = df.loc[df.symbol.isin(symbols)]
+        if brokers:
+            df = df.loc[df.broker.isin(brokers)]
+        return df
 
     def get_last_trade(
         self, symbol: Union[Symbol, str], broker: Union[Broker, str]
@@ -51,6 +73,7 @@ class BigQuery(ABC, BaseModel):
 
         :param trade:
         """
+        trade.pattern = json.dumps(trade.pattern)
         new_df = pd.DataFrame(trade.dict(), index=[0])
         new_df.order_id = new_df.order_id.astype(str)
         new_df.order_link_id = new_df.order_link_id.astype(str)

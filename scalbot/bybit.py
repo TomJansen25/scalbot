@@ -200,16 +200,19 @@ class Bybit:
         symbol: Optional[str] = None,
         order_status: Optional[str] = None,
         order_type: Optional[str] = None,
+        limit: Optional[int] = None,
     ) -> list:
 
         logger.info(
             f"Retrieving active orders for {symbol} with order status {order_status}..."
         )
-        params = dict()
+        params = {}
         if symbol:
             params["symbol"] = symbol
         if order_status:
             params["order_status"] = order_status
+        if limit:
+            params["limit"] = limit
         params = self._generate_request_params(params=params)
 
         response = self._send_request("GET", self.url + "v2/private/order/list", params)
@@ -348,6 +351,33 @@ class Bybit:
         )
         return response.result
 
+    def cancel_conditional_order(
+        self,
+        symbol: str,
+        stop_order_id: Optional[str] = None,
+        order_link_id: Optional[str] = None,
+    ) -> dict:
+
+        if not stop_order_id and not order_link_id:
+            raise ValueError(
+                "Either order_id or order_link_id is required, "
+                "and not both can be left blank"
+            )
+
+        params = {"symbol": symbol}
+        if stop_order_id:
+            params["stop_order_id"] = stop_order_id
+        if order_link_id:
+            params["order_link_id"] = order_link_id
+
+        params = self._generate_request_params(params=params)
+
+        response = self._send_request(
+            "POST", self.url + "/v2/private/stop-order/cancel", params
+        )
+
+        return response.result
+
     def get_tp_sl_mode(self, symbol: str) -> str:
         """
         Get currently active TP/SL Mode for a symbol, which is either Full or Partial
@@ -355,7 +385,7 @@ class Bybit:
         :return: "Full" or "Partial"
         """
         position = self.get_position(symbol=symbol)
-        tp_sl_mode: str = position.get("tp_sl_mode")
+        tp_sl_mode = position.get("tp_sl_mode")
         return tp_sl_mode
 
     def switch_tp_sl_mode(self, symbol: str, tp_sl_mode: str) -> dict:
@@ -581,3 +611,31 @@ class Bybit:
         df = df.drop(df.tail(1).index)
 
         return df
+
+    def get_closed_profit_and_loss(
+        self,
+        symbol: str,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+    ) -> dict:
+        """
+
+        :param symbol:
+        :param start_time:
+        :param end_time:
+        :return:
+        """
+        params = dict()
+        params["symbol"] = symbol
+        params["limit"] = 50
+        if start_time:
+            params["start_time"] = start_time
+        if end_time:
+            params["end_time"] = end_time
+        params = self._generate_request_params(params=params)
+
+        response = self._send_request(
+            "GET", self.url + "/v2/private/trade/closed-pnl/list", params
+        )
+
+        return response.result
