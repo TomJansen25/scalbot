@@ -2,7 +2,7 @@ import hashlib
 import hmac
 from datetime import datetime, timedelta
 from os import getenv
-from typing import Optional, Tuple, Union
+from typing import Dict, Optional, Tuple, Union
 from urllib.parse import urlencode
 from uuid import uuid4
 
@@ -206,7 +206,7 @@ class Bybit:
         logger.info(
             f"Retrieving active orders for {symbol} with order status {order_status}..."
         )
-        params = {}
+        params: Dict[str, Union[str, int]] = {}
         if symbol:
             params["symbol"] = symbol
         if order_status:
@@ -549,7 +549,7 @@ class Bybit:
                     self.add_take_profit_to_position(
                         symbol=symbol,
                         take_profit=getattr(trade, level),
-                        size=int(open_position.size * getattr(trade, f"{level}_share")),
+                        size=int(getattr(trade, f"{level}_share")),
                     )
 
         if fill_stop_loss and open_position.open_sl < open_position.size:
@@ -625,7 +625,7 @@ class Bybit:
         :param end_time:
         :return:
         """
-        params = dict()
+        params: Dict[str, Union[str, int]] = dict()
         params["symbol"] = symbol
         params["limit"] = 50
         if start_time:
