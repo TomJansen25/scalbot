@@ -64,6 +64,29 @@ class TradingStrategy(ABC, BaseModel):
             take_profit_3_share=take_profit_3_share,
         )
 
+    def get_sample_trade(self, price: int = 35000) -> Trade:
+
+        quantity_usd = int(self.bet_amount * (self.risk / self.stop_loss))
+
+        return Trade(
+            timestamp=datetime.now(),
+            source_candle=datetime.now(),
+            pattern="",
+            side="Buy",
+            symbol="BTCUSD",
+            price=price,
+            quantity_usd=quantity_usd,
+            position_size=quantity_usd / price,
+            stop_loss=int(price + (price * self.stop_loss)),
+            take_profit_1=int(price - (price * self.take_profit_1)),
+            take_profit_1_share=0.4,
+            take_profit_2=int(price - (price * self.take_profit_2)),
+            take_profit_2_share=0.3,
+            take_profit_3=int(price - (price * self.take_profit_3)),
+            take_profit_3_share=0.3,
+            order_link_id=uuid4(),
+        )
+
     def define_trade(self, trade_side: str, candle: Candle, pattern: dict) -> Trade:
         """
 
@@ -96,6 +119,15 @@ class TradingStrategy(ABC, BaseModel):
         quantity_usd = int(self.bet_amount * (self.risk / self.stop_loss))
         side = "Buy" if trade_side == "long" else "Sell"
 
+        tp_shares = divide_quantity_over_shares(
+            quantity=quantity_usd,
+            shares={
+                "tp1_share": self.take_profit_1_share,
+                "tp2_share": self.take_profit_2_share,
+                "tp3_share": self.take_profit_3_share,
+            },
+        )
+
         return Trade(
             timestamp=datetime.now(),
             source_candle=candle.start,
@@ -107,10 +139,30 @@ class TradingStrategy(ABC, BaseModel):
             position_size=quantity_usd / price,
             stop_loss=np.round(stop_loss, 2),
             take_profit_1=np.round(tp1, 2),
-            take_profit_1_share=self.take_profit_1_share,
+            take_profit_1_share=tp_shares.get("tp1_share"),
             take_profit_2=np.round(tp2, 2),
-            take_profit_2_share=self.take_profit_2_share,
+            take_profit_2_share=tp_shares.get("tp2_share"),
             take_profit_3=np.round(tp3, 2),
-            take_profit_3_share=self.take_profit_3_share,
+            take_profit_3_share=tp_shares.get("tp3_share"),
             order_link_id=uuid4(),
         )
+
+
+def divide_quantity_over_shares(
+    quantity: int, shares: dict[str, float]
+) -> dict[str, int]:
+
+    total = 0
+    calculated_shares = {}
+
+    for share_id, share in shares.items():
+        calc_share = round(quantity * share)
+        total += calc_share
+        calculated_shares[share_id] = calc_share
+
+    diff = quantity - total
+    if diff != 0:
+        first_key = next(iter(calculated_shares))
+        calculated_shares[first_key] = calculated_shares.get(first_key, 0) + diff
+
+    return calculated_shares

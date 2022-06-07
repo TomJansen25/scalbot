@@ -23,11 +23,11 @@ class Trade(BaseModel):
     position_size: float
     stop_loss: float
     take_profit_1: float
-    take_profit_1_share: float = Field(default=0.4, gt=0, le=1)
+    take_profit_1_share: float = Field(gt=0)
     take_profit_2: float
-    take_profit_2_share: float = Field(default=0.3, ge=0, lt=1)
+    take_profit_2_share: float = Field(ge=0)
     take_profit_3: float
-    take_profit_3_share: float = Field(default=0.3, ge=0, lt=1)
+    take_profit_3_share: float = Field(ge=0)
     broker: Optional[Broker] = None
     order_id: Optional[UUID4] = None
     order_link_id: Optional[UUID4] = Field(default_factory=uuid_as_string)
@@ -47,9 +47,11 @@ class Trade(BaseModel):
         tp2_share = values.get("take_profit_2_share")
         tp3_share = values.get("take_profit_3_share")
         total_tp_share = tp1_share + tp2_share + tp3_share
-        if np.round(total_tp_share) != 1:
+        qty = values.get("quantity_usd")
+        if np.round(total_tp_share) != qty:
             raise ValueError(
-                f"Sum of all TP Shares does not amount to 1, but to {total_tp_share}"
+                f"Sum of all TP Shares does not amount to Quantity of {qty}"
+                f", but to {total_tp_share}"
             )
         return values
 
