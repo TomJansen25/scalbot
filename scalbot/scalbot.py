@@ -2,7 +2,6 @@
 Scalbot Class Definition
 """
 
-import json
 import time
 from abc import ABC
 from datetime import datetime, timedelta
@@ -115,11 +114,39 @@ class Scalbot(BaseModel, ABC):
                             fill_take_profit=False,
                         )
 
-                    matched_orders = self.match_open_orders_to_trade(
+                    matched_orders, reached_tp_level = self.match_open_orders_to_trade(
                         position=open_position, orders=new_limit_orders, trade=trade
                     )
 
                     logger.info(f"Matched orders: {matched_orders}")
+                    print(reached_tp_level)
+
+                    if reached_tp_level >= 1:
+
+                        _, sls = bybit.get_untriggered_take_profits_and_stop_losses(
+                            symbol=symbol
+                        )
+                        stop_loss = sls[0]
+                        print(stop_loss)
+                        if int(trade.price) != int(float(stop_loss.get("stop_px"))):
+                            logger.info(
+                                "Take Profit Level 1 has been reached, but Stop Loss is still the "
+                                "original. Stop Loss will be cancelled and set to the trade price"
+                            )
+                            bybit.cancel_conditional_order(
+                                symbol=symbol,
+                                stop_order_id=stop_loss.get("stop_order_id"),
+                            )
+                            bybit.add_stop_loss_to_position(
+                                symbol=symbol,
+                                stop_loss=trade.price,
+                                size=open_position.size,
+                            )
+                        else:
+                            logger.info(
+                                "Take Profit Level 1 has been reached, but Stop Loss is already at "
+                                "trade price level. Stop Loss does not need to be adjusted."
+                            )
 
                     for tp_level, level_set in matched_orders.items():
                         if level_set == "order_not_set":
@@ -128,10 +155,7 @@ class Scalbot(BaseModel, ABC):
                                 symbol=trade.symbol,
                                 order_type="Limit",
                                 side=side,
-                                qty=int(
-                                    getattr(trade, "quantity_usd")
-                                    * getattr(trade, f"{tp_level}_share")
-                                ),
+                                qty=int(getattr(trade, f"{tp_level}_share")),
                                 price=int(getattr(trade, tp_level)),
                                 close_on_trigger=True,
                             )
@@ -201,39 +225,40 @@ class Scalbot(BaseModel, ABC):
             time.sleep(60)
 
     @staticmethod
-    def find_open_take_profits(position: OpenPosition, trade: Trade) -> list[str]:
+    def find_open_take_profits(
+        position: OpenPosition, trade: Trade
+    ) -> Tuple[list[str], int]:
 
         total_take_profit_size = 0
+        reached_level = 0
         required_take_profits = []
 
-        for level in ["take_profit_3", "take_profit_2", "take_profit_1"]:
-            tp_size = int(
-                getattr(trade, "quantity_usd") * getattr(trade, f"{level}_share")
-            )
+        for level in [3, 2, 1]:
+            tp_level = f"take_profit_{level}"  # , "take_profit_2", "take_profit_1"
+            tp_size = int(getattr(trade, f"{tp_level}_share"))
             if total_take_profit_size >= position.size:
+                reached_level = level
                 break
-            required_take_profits.append(level)
+            required_take_profits.append(tp_level)
             total_take_profit_size += tp_size
 
-        return required_take_profits
+        return required_take_profits, reached_level
 
     @logger.catch
     def match_open_orders_to_trade(
         self, position: OpenPosition, orders: list, trade: Trade
-    ) -> dict:
+    ) -> Tuple[dict, int]:
 
         matched_orders = {}
 
         filled_position_size = 0
-        required_take_profit_levels = self.find_open_take_profits(
+        required_take_profit_levels, reached_level = self.find_open_take_profits(
             position=position, trade=trade
         )
 
         for level in required_take_profit_levels:
             tp_price = int(getattr(trade, level))
-            tp_size = int(
-                getattr(trade, "quantity_usd") * getattr(trade, f"{level}_share")
-            )
+            tp_size = int(getattr(trade, f"{level}_share"))
 
             if filled_position_size == position.size:
                 matched_orders[level] = "order_already_filled"
@@ -261,7 +286,7 @@ class Scalbot(BaseModel, ABC):
                     f"size {tp_size} cannot be matched yet!"
                 )
 
-        return matched_orders
+        return matched_orders, reached_level
 
     @staticmethod
     def find_candle_pattern(candle: Candle, patterns: list[dict]) -> Optional[dict]:
