@@ -17,6 +17,7 @@ db-dtypes = "^1.0.0"
 beautifulsoup4 = "^4.11.1"
 python-dateutil = "^2.8.2"
 optuna = "^2.10.0"
+typer = "^0.4.1"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"

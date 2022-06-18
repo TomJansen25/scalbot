@@ -10,4 +10,4 @@ deploy-gcp-dev:
     $JOBNAME = scalbot-job-123
     gcloud scheduler jobs pause $JOBNAME
     gcloud functions deploy scalbot-init-func --region europe-west3 --entry-point scalbot_init_func --runtime python39 --trigger-topic $TOPICNAME
-    gcloud scheduler jobs resume $JOBNAME
+    gcloud scheduler jobs resume $JOBNAME --location europe-west3

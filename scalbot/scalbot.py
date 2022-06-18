@@ -127,7 +127,7 @@ class Scalbot(BaseModel, ABC):
                             symbol=symbol
                         )
                         stop_loss = sls[0]
-                        print(stop_loss)
+
                         if int(trade.price) != int(float(stop_loss.get("stop_px"))):
                             logger.info(
                                 "Take Profit Level 1 has been reached, but Stop Loss is still the "
@@ -156,7 +156,7 @@ class Scalbot(BaseModel, ABC):
                                 order_type="Limit",
                                 side=side,
                                 qty=int(getattr(trade, f"{tp_level}_share")),
-                                price=int(getattr(trade, tp_level)),
+                                price=float(getattr(trade, tp_level)),
                                 close_on_trigger=True,
                             )
                     else:
@@ -257,7 +257,7 @@ class Scalbot(BaseModel, ABC):
         )
 
         for level in required_take_profit_levels:
-            tp_price = int(getattr(trade, level))
+            tp_price = float(getattr(trade, level))
             tp_size = int(getattr(trade, f"{level}_share"))
 
             if filled_position_size == position.size:
@@ -267,8 +267,8 @@ class Scalbot(BaseModel, ABC):
                 (
                     order
                     for order in orders
-                    if int(float(order.get("price"))) == tp_price
-                    and int(float(order.get("qty"))) == tp_size
+                    if float(order.get("price")) == tp_price
+                    and int(order.get("qty")) == tp_size
                 ),
                 None,
             )
