@@ -6,7 +6,7 @@ tests/
 .pre-commit-config.yaml
 .pylintrc
 *.log
-scalbot-bigquery-0c6af48e6222.json
+config/scalbot-bigquery-0c6af48e6222.json
 
 
 ### Poetry stuff

@@ -21,7 +21,7 @@ repos:
     hooks:
     -   id: mypy
         name: mypy
-        stages: [ commit ]
+        stages: [ post-commit ]
         language: system
         entry: poetry run mypy
         types: [python]
