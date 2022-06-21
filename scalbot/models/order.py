@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from scalbot.enums import OrderType, Side, Symbol
 
 
-class Order(BaseModel):
+class BaseOrder(BaseModel):
     user_id: int
     position_idx: int
     symbol: Symbol
@@ -27,12 +27,12 @@ class Order(BaseModel):
         extra = "allow"
 
 
-class ActiveOrder(Order):
+class ActiveOrder(BaseOrder):
     order_status: str
     order_id: str
 
 
-class ConditionalOrder(Order):
+class ConditionalOrder(BaseOrder):
     stop_order_status: str
     stop_order_type: str
     stop_order_id: str
