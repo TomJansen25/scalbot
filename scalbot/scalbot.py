@@ -2,12 +2,12 @@
 Scalbot Class Definition
 """
 
-import time
 from abc import ABC
 from datetime import datetime, timedelta
 from typing import Optional, Tuple, Union
 
 import pandas as pd
+import pytz
 from loguru import logger
 from pydantic import BaseModel, Field
 
@@ -15,7 +15,15 @@ from scalbot.bigquery import BigQuery
 from scalbot.bybit import Bybit
 from scalbot.data import calc_candle_colors, get_latest_candle
 from scalbot.enums import Symbol
-from scalbot.models import Candle, OpenPosition, Trade
+from scalbot.models import (
+    ActiveOrder,
+    BaseOrder,
+    Candle,
+    ConditionalOrder,
+    LatestInfo,
+    OpenPosition,
+    Trade,
+)
 from scalbot.technical_indicators import calc_sma
 from scalbot.trades import TradingStrategy
 from scalbot.utils import get_percentage_occurrences, is_subdict
@@ -55,174 +63,150 @@ class Scalbot(BaseModel, ABC):
         self.trading_strategy = trading_strategy
 
     @logger.catch
-    def run_bybit_bot(self, symbols: Union[Symbol, list[Symbol]] = Symbol.BTCUSD):
+    def run_bybit_bot(self, bybit: Bybit, symbol: Symbol = Symbol.BTCUSD):
         """
         Initializes Bybit HTTP and Websocket connections and starts Bybit Scalbot instance
-        :param symbols: string or list of strings indicating symbols to retrieve data of
+        :param bybit:
+        :param symbol: Symbol enum/string indicating which Symbol to check
         """
-        logger.info(
-            f"Setting up bybit bot with Candle Frequency = {self.candle_frequency} and "
-            f"for the following Symbols: {symbols}..."
+
+        bybit.setup_http()
+        open_position = bybit.get_open_position(symbol)
+
+        # CHECK 1: see if there are any open Limit Orders with a Stop Loss, indicating
+        # that there is a new active order pending to open a position
+        new_limit_orders, open_position_orders = bybit.find_open_position_orders(
+            symbol=symbol
         )
-        bybit = Bybit()
 
-        if not isinstance(symbols, list):
-            symbols = [symbols]
+        if len(open_position_orders) > 0:
+            logger.info(
+                f"There currently is an active order waiting to be filled to open a "
+                f"position for {symbol.value} and therefore no further action will be taken"
+            )
 
-        while True:
-            for symbol in symbols:
-                # try:
-                symbol = symbol.value
-                bybit.setup_http()
-                open_position = bybit.get_open_position(symbol)
+        # CHECK 2: see if there is an open position and check whether the calculated
+        # take profits and stop losses are properly set (and if not, set them)
 
-                # CHECK 1: see if there are any open Limit Orders with a Stop Loss, indicating
-                # that there is a new active order pending to open a position
-                new_limit_orders = bybit.get_active_orders(
-                    symbol=symbol, order_status="New", order_type="Limit"
+        elif open_position.size > 0:
+            logger.info(
+                f"There currently is an open position for {symbol} of "
+                f"size {open_position.size}"
+            )
+
+            trade = self.bigquery_client.get_last_trade(symbol=symbol, broker="Bybit")
+
+            if open_position.open_sl < open_position.size:
+                bybit.fill_position_with_defined_trade(
+                    symbol=symbol,
+                    open_position=open_position,
+                    trade=trade,
+                    fill_take_profit=False,
                 )
-                open_position_orders = [
-                    order
-                    for order in new_limit_orders
-                    if float(order.get("stop_loss")) > 0
-                ]
 
-                if len(open_position_orders) > 0:
+            matched_orders, reached_tp_level = self.match_open_orders_to_trade(
+                position=open_position, orders=new_limit_orders, trade=trade
+            )
+
+            logger.info(f"Matched orders: {matched_orders}")
+            print(reached_tp_level)
+
+            if reached_tp_level >= 1:
+
+                _, sls = bybit.get_untriggered_take_profits_and_stop_losses(
+                    symbol=symbol
+                )
+                stop_loss = sls[0]
+
+                if int(trade.price) != int(float(stop_loss.get("stop_px"))):
                     logger.info(
-                        f"There currently is an active order waiting to be filled to open a "
-                        f"position for {symbol} and therefore no further action will be taken"
+                        "Take Profit Level 1 has been reached, but Stop Loss is still the "
+                        "original. Stop Loss will be cancelled and set to the trade price"
                     )
-
-                # CHECK 2: see if there is an open position and check whether the calculated
-                # take profits and stop losses are properly set (and if not, set them)
-
-                elif open_position.size > 0:
-                    logger.info(
-                        f"There currently is an open position for {symbol} of "
-                        f"size {open_position.size}"
+                    bybit.cancel_conditional_order(
+                        symbol=symbol,
+                        stop_order_id=stop_loss.get("stop_order_id"),
                     )
-
-                    trade = self.bigquery_client.get_last_trade(
-                        symbol=symbol, broker="Bybit"
+                    bybit.add_stop_loss_to_position(
+                        symbol=symbol,
+                        stop_loss=trade.price,
+                        size=open_position.size,
                     )
-
-                    if open_position.open_sl < open_position.size:
-                        bybit.fill_position_with_defined_trade(
-                            symbol=symbol,
-                            open_position=open_position,
-                            trade=trade,
-                            fill_take_profit=False,
-                        )
-
-                    matched_orders, reached_tp_level = self.match_open_orders_to_trade(
-                        position=open_position, orders=new_limit_orders, trade=trade
-                    )
-
-                    logger.info(f"Matched orders: {matched_orders}")
-                    print(reached_tp_level)
-
-                    if reached_tp_level >= 1:
-
-                        _, sls = bybit.get_untriggered_take_profits_and_stop_losses(
-                            symbol=symbol
-                        )
-                        stop_loss = sls[0]
-
-                        if int(trade.price) != int(float(stop_loss.get("stop_px"))):
-                            logger.info(
-                                "Take Profit Level 1 has been reached, but Stop Loss is still the "
-                                "original. Stop Loss will be cancelled and set to the trade price"
-                            )
-                            bybit.cancel_conditional_order(
-                                symbol=symbol,
-                                stop_order_id=stop_loss.get("stop_order_id"),
-                            )
-                            bybit.add_stop_loss_to_position(
-                                symbol=symbol,
-                                stop_loss=trade.price,
-                                size=open_position.size,
-                            )
-                        else:
-                            logger.info(
-                                "Take Profit Level 1 has been reached, but Stop Loss is already at "
-                                "trade price level. Stop Loss does not need to be adjusted."
-                            )
-
-                    for tp_level, level_set in matched_orders.items():
-                        if level_set == "order_not_set":
-                            side = "Sell" if trade.side == "Buy" else "Buy"
-                            order_res = bybit.place_active_order(
-                                symbol=trade.symbol,
-                                order_type="Limit",
-                                side=side,
-                                qty=int(getattr(trade, f"{tp_level}_share")),
-                                price=float(getattr(trade, tp_level)),
-                                close_on_trigger=True,
-                            )
-                    else:
-                        logger.info(
-                            "The position is completely filled, no action to be taken."
-                        )
-
                 else:
-                    logger.info(f"There is no open position for {symbol}...")
+                    logger.info(
+                        "Take Profit Level 1 has been reached, but Stop Loss is already at "
+                        "trade price level. Stop Loss does not need to be adjusted."
+                    )
 
-                    current_time = datetime.now().time()
+            for tp_level, level_set in matched_orders.items():
+                if level_set == "order_not_set":
+                    side = "Sell" if trade.side == "Buy" else "Buy"
+                    order_res = bybit.place_active_order(
+                        symbol=trade.symbol,
+                        order_type="Limit",
+                        side=side,
+                        qty=int(getattr(trade, f"{tp_level}_share")),
+                        price=float(getattr(trade, tp_level)),
+                        close_on_trigger=True,
+                    )
+            else:
+                logger.info("The position is completely filled, no action to be taken.")
 
-                    if current_time.minute % self.candle_frequency == 0:
-                        logger.info(
-                            f"Modulo of current time and chosen candle frequency = 0, so latest "
-                            f"data will be retrieved to check for the defined patterns..."
-                        )
+        else:
+            logger.info(f"There is no open position for {symbol}...")
 
-                        df = bybit.get_latest_symbol_data_as_df(
-                            symbol=symbol, interval=self.candle_frequency
-                        )
-                        df = calc_candle_colors(df=df)
-                        df["sma"] = calc_sma(df=df, col="close", n=9)
+            current_time = datetime.now().time()
 
-                        candle = get_latest_candle(df=df)
-                        (
-                            make_trade,
-                            trade_side,
-                            pattern,
-                            trade_candle,
-                        ) = self.evaluate_candle(candle=candle, df=df)
+            if current_time.minute % self.candle_frequency == 0:
+                logger.info(
+                    f"Modulo of current time and chosen candle frequency = 0, so latest "
+                    f"data will be retrieved to check for the defined patterns..."
+                )
 
-                        if make_trade:
-                            new_trade = self.trading_strategy.define_trade(
-                                trade_side=trade_side,
-                                candle=trade_candle,
-                                pattern=pattern,
-                            )
-                            logger.info(
-                                f"Pattern found and new trade calculated: {new_trade.dict()}"
-                            )
+                df = bybit.get_latest_symbol_data_as_df(
+                    symbol=symbol, interval=self.candle_frequency
+                )
+                df = calc_candle_colors(df=df)
+                df["sma"] = calc_sma(df=df, col="close", n=9)
 
-                            order_res = bybit.place_active_order(
-                                symbol=symbol,
-                                order_type="Limit",
-                                side=new_trade.side,
-                                qty=new_trade.quantity_usd,
-                                price=new_trade.price,
-                                stop_loss=new_trade.stop_loss,
-                                order_link_id=str(new_trade.order_link_id),
-                            )
+                candle = get_latest_candle(df=df)
+                (
+                    make_trade,
+                    trade_side,
+                    pattern,
+                    trade_candle,
+                ) = self.evaluate_candle(candle=candle, df=df)
 
-                            new_trade.broker = bybit.broker.value
-                            new_trade.order_id = order_res.get("order_id")
+                if make_trade:
+                    new_trade = self.trading_strategy.define_trade(
+                        trade_side=trade_side,
+                        candle=trade_candle,
+                        pattern=pattern,
+                    )
+                    logger.info(
+                        f"Pattern found and new trade calculated: {new_trade.dict()}"
+                    )
 
-                            self.bigquery_client.insert_trade_to_bigquery(
-                                trade=new_trade
-                            )
-                    else:
-                        logger.info(
-                            "Modulo of current time is not 0, so no further action will be taken"
-                        )
-                # except Exception as exception:
-                #   logger.error(f"Error occurred: {exception}")
+                    order_res = bybit.place_active_order(
+                        symbol=symbol,
+                        order_type="Limit",
+                        side=new_trade.side,
+                        qty=new_trade.quantity_usd,
+                        price=new_trade.price,
+                        stop_loss=new_trade.stop_loss,
+                        order_link_id=str(new_trade.order_link_id),
+                    )
 
-            time.sleep(60)
+                    new_trade.broker = bybit.broker.value
+                    new_trade.order_id = order_res.get("order_id")
+
+                    self.bigquery_client.insert_trade_to_bigquery(trade=new_trade)
+            else:
+                logger.info(
+                    "Modulo of current time is not 0, so no further action will be taken"
+                )
+        # except Exception as exception:
+        #   logger.error(f"Error occurred: {exception}")
 
     @staticmethod
     def find_open_take_profits(
@@ -481,3 +465,96 @@ class Scalbot(BaseModel, ABC):
         )
 
         return make_trade, trade_side, v_pattern, turning_point_candle
+
+
+def is_order_expired(
+    current_order: BaseOrder, max_timedelta: timedelta = timedelta(hours=24)
+) -> bool:
+    current_date = datetime.now().astimezone(pytz.UTC)
+    order_updated_date = current_order.updated_at.astimezone(pytz.UTC)
+    diff = current_date - order_updated_date
+    if diff > max_timedelta:
+        return True
+    else:
+        return False
+
+
+def is_order_price_too_far_off_last_price(
+    current_order: BaseOrder,
+    latest_info: LatestInfo,
+    max_rel_diff: float = None,
+    max_abs_diff: float = None,
+):
+    if max_rel_diff is None and max_abs_diff is None:
+        raise KeyError(
+            f"Either one of both 'max_rel_diff' or 'max_abs_diff' has to be provided, "
+            f"otherwise nothing can be calculated!"
+        )
+    order_price = current_order.price
+    current_price = latest_info.last_price
+    rel_diff = (order_price - current_price) / current_price
+    abs_diff = order_price - current_price
+
+    if max_rel_diff and abs(rel_diff) > max_rel_diff:
+        return True
+    elif max_abs_diff and abs(abs_diff) > max_abs_diff:
+        return True
+    else:
+        return False
+
+
+def cancel_invalid_expired_orders(
+    bybit: Bybit, symbols: list[Symbol]
+) -> list[ActiveOrder]:
+
+    invalid_or_expired_orders: list[ActiveOrder] = []
+    cancelled_orders: list[ActiveOrder] = []
+
+    for symbol in symbols:
+        open_position = bybit.get_open_position(symbol=symbol.value)
+        open_position_orders = bybit.find_open_position_orders(symbol=symbol)
+        latest_info = bybit.get_latest_symbol_information(symbol=symbol)
+
+        if open_position.size == 0 and len(open_position_orders) > 0:
+            logger.info(
+                f"There is currently no open position, but there is an active order "
+                f"waiting to open a position for {symbol.value}"
+            )
+
+            for order in open_position_orders:
+                order_expired = is_order_expired(current_order=order)
+                order_invalid = is_order_price_too_far_off_last_price(
+                    current_order=order, latest_info=latest_info, max_rel_diff=0.25
+                )
+                if order_expired or order_invalid:
+                    logger.info(
+                        f"Order {order.order_id} is expired and/or invalid and will be cancelled..."
+                    )
+                    invalid_or_expired_orders.append(order)
+                else:
+                    logger.info(
+                        f"Order {order.order_id} is still valid and will not be cancelled!"
+                    )
+
+    if len(invalid_or_expired_orders) > 0:
+        logger.info(
+            f"Found {len(invalid_or_expired_orders)} invalid or expired open orders that "
+            f"will be canceled..."
+        )
+
+        for order in invalid_or_expired_orders:
+            res = bybit.cancel_active_order(
+                symbol=order.symbol.value, order_id=order.order_id
+            )
+            if res:
+                cancelled_orders.append(order)
+                logger.info(
+                    f"Order {order.order_id} for {order.symbol.value} successfully cancelled!"
+                )
+    else:
+        logger.info(
+            f"No orders for {[s.value for s in symbols]} were found to be invalid and/or expired, "
+            f"so nothing will be cancelled"
+        )
+
+    return cancelled_orders

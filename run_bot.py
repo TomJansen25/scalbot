@@ -3,9 +3,12 @@ Run BTC and ETH Bots test script
 """
 
 import argparse
+import time
 
 from dotenv import load_dotenv
+from loguru import logger
 
+from scalbot.bybit import Bybit
 from scalbot.enums import Broker, Symbol
 from scalbot.scalbot import Scalbot
 from scalbot.trades import TradingStrategy
@@ -15,7 +18,46 @@ setup_logging()
 load_dotenv()
 
 V_PATTERNS = [
-    {"color": "green", "prev_1": "green", "prev_2": "green", "prev_3": "red"},
+    {
+        "color": "green",
+        "prev_color_1": "green",
+        "prev_color_2": "green",
+        "prev_color_3": "red",
+    },
+    {
+        "color": "green",
+        "prev_color_1": "red",
+        "prev_color_2": "green",
+        "prev_color_3": "green",
+        "prev_color_4": "red",
+    },
+    {
+        "color": "green",
+        "prev_color_1": "green",
+        "prev_color_2": "red",
+        "prev_color_3": "green",
+        "prev_color_4": "red",
+    },
+    {
+        "color": "red",
+        "prev_color_1": "red",
+        "prev_color_2": "red",
+        "prev_color_3": "green",
+    },
+    {
+        "color": "red",
+        "prev_color_1": "green",
+        "prev_color_2": "red",
+        "prev_color_3": "red",
+        "prev_color_4": "green",
+    },
+    {
+        "color": "red",
+        "prev_color_1": "red",
+        "prev_color_2": "green",
+        "prev_color_3": "red",
+        "prev_color_4": "green",
+    },
 ]
 
 
@@ -75,9 +117,22 @@ if __name__ == "__main__":
 
     args = parse_args().__dict__
 
-    trading_strategy = TradingStrategy(
-        bet_amount=args.get("bet_amount"), risk=args.get("risk")
-    )
+    symbols = args.get("symbols")
+    print(symbols)
+
+    if symbols == "MANAUSD":
+        trading_strategy = TradingStrategy(
+            bet_amount=25,
+            risk=0.015,
+            stop_loss=0.0020,
+            take_profit_1=0.0020,
+            take_profit_2=0.0040,
+            take_profit_3=0.0060,
+        )
+    else:
+        trading_strategy = TradingStrategy(
+            bet_amount=args.get("bet_amount"), risk=args.get("risk")
+        )
 
     scalbot = Scalbot(
         patterns=V_PATTERNS,
@@ -85,4 +140,19 @@ if __name__ == "__main__":
         candle_frequency=args.get("candle_frequency"),
     )
 
-    scalbot.run_bybit_bot(symbols=[Symbol.BTCUSD])
+    if isinstance(symbols, str):
+        symbols = [Symbol[symbols]]
+    else:
+        symbols = [Symbol[s] for s in args.get("symbols")]
+
+    logger.info(
+        f"Setting up bybit bot with Candle Frequency = {scalbot.candle_frequency} and "
+        f"for the following Symbols: {symbols}..."
+    )
+
+    bybit = Bybit()
+
+    while True:
+        for symbol in symbols:
+            scalbot.run_bybit_bot(bybit=bybit, symbol=symbol)
+        time.sleep(60)

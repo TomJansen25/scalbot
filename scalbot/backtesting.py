@@ -1,17 +1,17 @@
 from abc import ABC
+from datetime import timedelta
 from typing import Optional
 
 import numpy as np
 import optuna
 import pandas as pd
 from dateutil.relativedelta import relativedelta
-from datetime import timedelta
-from pydantic import BaseModel
 from loguru import logger
+from pydantic import BaseModel
 
-from scalbot.scalbot import Scalbot
 from scalbot.enums import Symbol
 from scalbot.models import Candle
+from scalbot.scalbot import Scalbot
 from scalbot.trades import TradingStrategy
 
 V_PATTERNS = [

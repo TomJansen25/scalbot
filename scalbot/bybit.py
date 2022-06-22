@@ -13,7 +13,14 @@ from pybit.inverse_perpetual import HTTP, WebSocket
 
 from scalbot.bigquery import BigQuery
 from scalbot.enums import Broker, Symbol
-from scalbot.models import BybitResponse, OpenPosition, Trade
+from scalbot.models import (
+    ActiveOrder,
+    BybitResponse,
+    ConditionalOrder,
+    LatestInfo,
+    OpenPosition,
+    Trade,
+)
 
 
 class Bybit:
@@ -124,7 +131,9 @@ class Bybit:
         ).hexdigest()
         return sign
 
-    def _generate_request_params(self, params: dict) -> dict:
+    def _generate_request_params(
+        self, params: Dict[str, Union[str, int, float]]
+    ) -> dict:
         params["api_key"] = self._api_key
         params["timestamp"] = self.get_server_time()
         params = dict(sorted(params.items()))
@@ -161,15 +170,15 @@ class Bybit:
 
         return bybit_response
 
-    def get_wallet_balance(self, symbol: Optional[str] = None) -> dict:
+    def get_wallet_balance(self, symbol: Optional[Symbol] = None) -> dict:
         """
 
         :param symbol:
         :return:
         """
-        params = dict()
+        params: Dict[str, Union[str, int, float]] = dict()
         if symbol:
-            params["symbol"] = symbol
+            params["symbol"] = symbol.value
         params = self._generate_request_params(params=params)
 
         response = self._send_request(
@@ -178,15 +187,15 @@ class Bybit:
 
         return response.result
 
-    def get_position(self, symbol: Optional[str] = None) -> dict:
+    def get_position(self, symbol: Optional[Symbol] = None) -> dict:
         """
 
         :param symbol:
         :return:
         """
-        params = dict()
+        params: Dict[str, Union[str, int, float]] = dict()
         if symbol:
-            params["symbol"] = symbol
+            params["symbol"] = symbol.value
         params = self._generate_request_params(params=params)
 
         response = self._send_request(
@@ -197,18 +206,18 @@ class Bybit:
 
     def get_active_orders(
         self,
-        symbol: Optional[str] = None,
+        symbol: Optional[Symbol] = None,
         order_status: Optional[str] = None,
         order_type: Optional[str] = None,
         limit: Optional[int] = None,
     ) -> list:
 
-        logger.info(
-            f"Retrieving active orders for {symbol} with order status {order_status}..."
-        )
-        params: Dict[str, Union[str, int]] = {}
+        params: Dict[str, Union[str, int, float]] = dict()
         if symbol:
-            params["symbol"] = symbol
+            logger.info(
+                f"Retrieving active orders for {symbol.value} with order status {order_status}..."
+            )
+            params["symbol"] = symbol.value
         if order_status:
             params["order_status"] = order_status
         if limit:
@@ -229,11 +238,11 @@ class Bybit:
 
     def query_active_order(
         self,
-        symbol: str,
+        symbol: Symbol,
         order_id: Optional[str] = None,
         order_link_id: Optional[str] = None,
     ) -> dict:
-        params = dict(symbol=symbol)
+        params: Dict[str, Union[str, int, float]] = dict(symbol=symbol.value)
         if order_id:
             params["order_id"] = order_id
         if order_link_id:
@@ -246,7 +255,7 @@ class Bybit:
     def place_active_order(
         self,
         side: str,
-        symbol: str,
+        symbol: Symbol,
         order_type: str,
         qty: int,
         price: float,
@@ -257,9 +266,9 @@ class Bybit:
         order_link_id: str = None,
     ) -> dict:
 
-        params = {
+        params: Dict[str, Union[str, int, float]] = {
             "side": side,
-            "symbol": symbol,
+            "symbol": symbol.value,
             "order_type": order_type,
             "qty": qty,
             "price": price,
@@ -290,7 +299,7 @@ class Bybit:
 
     def cancel_active_order(
         self,
-        symbol: str,
+        symbol: Symbol,
         order_id: Optional[str] = None,
         order_link_id: Optional[str] = None,
     ) -> dict:
@@ -301,7 +310,7 @@ class Bybit:
                 "and not both can be left blank"
             )
 
-        params = {"symbol": symbol}
+        params: Dict[str, Union[str, int, float]] = dict(symbol=symbol.value)
         if order_id:
             params["order_id"] = order_id
         if order_link_id:
@@ -316,12 +325,12 @@ class Bybit:
         return response.result
 
     def get_conditional_orders(
-        self, symbol: Optional[str] = None, order_status: Optional[str] = None
+        self, symbol: Optional[Symbol] = None, order_status: Optional[str] = None
     ) -> list:
 
-        params = dict()
+        params: Dict[str, Union[str, int, float]] = dict()
         if symbol:
-            params["symbol"] = symbol
+            params["symbol"] = symbol.value
         if order_status:
             params["stop_order_status"] = order_status
         params = self._generate_request_params(params=params)
@@ -335,11 +344,11 @@ class Bybit:
 
     def query_conditional_order(
         self,
-        symbol: str,
+        symbol: Symbol,
         order_id: Optional[str] = None,
         order_link_id: Optional[str] = None,
     ):
-        params = dict(symbol=symbol)
+        params: Dict[str, Union[str, int, float]] = dict(symbol=symbol.value)
         if order_id:
             params["order_id"] = order_id
         if order_link_id:
@@ -353,7 +362,7 @@ class Bybit:
 
     def cancel_conditional_order(
         self,
-        symbol: str,
+        symbol: Symbol,
         stop_order_id: Optional[str] = None,
         order_link_id: Optional[str] = None,
     ) -> dict:
@@ -364,7 +373,7 @@ class Bybit:
                 "and not both can be left blank"
             )
 
-        params = {"symbol": symbol}
+        params: Dict[str, Union[str, int, float]] = dict(symbol=symbol.value)
         if stop_order_id:
             params["stop_order_id"] = stop_order_id
         if order_link_id:
@@ -378,17 +387,17 @@ class Bybit:
 
         return response.result
 
-    def get_tp_sl_mode(self, symbol: str) -> str:
+    def get_tp_sl_mode(self, symbol: Symbol) -> str:
         """
         Get currently active TP/SL Mode for a symbol, which is either Full or Partial
         :param symbol:
         :return: "Full" or "Partial"
         """
         position = self.get_position(symbol=symbol)
-        tp_sl_mode = position.get("tp_sl_mode")
+        tp_sl_mode: str = str(position.get("tp_sl_mode"))
         return tp_sl_mode
 
-    def switch_tp_sl_mode(self, symbol: str, tp_sl_mode: str) -> dict:
+    def switch_tp_sl_mode(self, symbol: Symbol, tp_sl_mode: str) -> dict:
         if tp_sl_mode not in ["Full", "Partial"]:
             raise ValueError(
                 f"Incorrect TP/SL Mode provided ({tp_sl_mode}). "
@@ -397,7 +406,9 @@ class Bybit:
         current_mode = self.get_tp_sl_mode(symbol=symbol)
 
         if current_mode != tp_sl_mode:
-            params = dict(symbol=symbol, tp_sl_mode=tp_sl_mode)
+            params: Dict[str, Union[str, int, float]] = dict(
+                symbol=symbol.value, tp_sl_mode=tp_sl_mode
+            )
             params = self._generate_request_params(params=params)
 
             response = self._send_request(
@@ -410,7 +421,7 @@ class Bybit:
 
         return response.result
 
-    def get_open_position(self, symbol: str) -> OpenPosition:
+    def get_open_position(self, symbol: Symbol) -> OpenPosition:
         """
         Retrieve current open position and set Take Profits and Stop Losses on the position
         :param symbol:
@@ -420,11 +431,11 @@ class Bybit:
         position_size = current_position.get("size")
 
         if position_size == 0:
-            logger.info(f"No current open position for {symbol}")
+            logger.info(f"No current open position for {symbol.value}")
             open_pos = OpenPosition(size=0, open_tp=0, open_sl=0)
         else:
             logger.info(
-                f"There currently is a position of {position_size} open for {symbol}"
+                f"There currently is a position of {position_size} open for {symbol.value}"
             )
 
             tps, sls = self.get_untriggered_take_profits_and_stop_losses(
@@ -445,7 +456,7 @@ class Bybit:
         return open_pos
 
     def get_untriggered_take_profits_and_stop_losses(
-        self, symbol: str, order_type: str = "Market"
+        self, symbol: Symbol, order_type: str = "Market"
     ) -> Tuple[list, list]:
         """
 
@@ -480,33 +491,39 @@ class Bybit:
 
         return tps, sls
 
-    def add_take_profit_to_position(self, symbol: str, take_profit: float, size: float):
-        params = dict(symbol=symbol, take_profit=take_profit, tp_size=size)
+    def add_take_profit_to_position(
+        self, symbol: Symbol, take_profit: float, size: float
+    ):
+        params: Dict[str, Union[str, int, float]] = dict(
+            symbol=symbol.value, take_profit=take_profit, tp_size=size
+        )
         params = self._generate_request_params(params=params)
 
         response = self._send_request(
             "POST", self.url + "/v2/private/position/trading-stop", params=params
         )
         logger.info(
-            f"Added a Take Profit with price {take_profit} of size {size} to {symbol}"
+            f"Added a Take Profit with price {take_profit} of size {size} to {symbol.value}"
         )
         return response.result
 
-    def add_stop_loss_to_position(self, symbol: str, stop_loss: float, size: float):
-        params = dict(symbol=symbol, stop_loss=stop_loss, sl_size=size)
+    def add_stop_loss_to_position(self, symbol: Symbol, stop_loss: float, size: float):
+        params: Dict[str, Union[str, float]] = dict(
+            symbol=symbol.value, stop_loss=stop_loss, sl_size=size
+        )
         params = self._generate_request_params(params=params)
 
         response = self._send_request(
             "POST", self.url + "/v2/private/position/trading-stop", params=params
         )
         logger.info(
-            f"Added a Stop Loss with price {stop_loss} of size {size} to {symbol}"
+            f"Added a Stop Loss with price {stop_loss} of size {size} to {symbol.value}"
         )
         return response.result
 
     def fill_position_with_defined_trade(
         self,
-        symbol: str,
+        symbol: Symbol,
         open_position: OpenPosition = None,
         trade: Trade = None,
         fill_stop_loss: bool = True,
@@ -525,7 +542,7 @@ class Bybit:
 
         if not trade:
             bigquery = BigQuery()
-            trade = bigquery.get_last_trade(symbol=symbol, broker=self.broker.value)
+            trade = bigquery.get_last_trade(symbol=symbol, broker=self.broker)
 
         tps, sls = self.get_untriggered_take_profits_and_stop_losses(symbol=symbol)
 
@@ -575,7 +592,7 @@ class Bybit:
                 )
 
     def get_latest_symbol_data_as_df(
-        self, symbol: str, interval: int, from_time: int = None
+        self, symbol: Symbol, interval: int, from_time: int = None
     ):
         """
 
@@ -589,18 +606,18 @@ class Bybit:
             from_time = self.get_server_time(as_timestamp=False) - (interval * 7200)
 
         logger.info(
-            f"Retrieving data for {symbol} with candle frequency = {interval} "
+            f"Retrieving data for {symbol.value} with candle frequency = {interval} "
             f"since {datetime.utcfromtimestamp(from_time).strftime('%d.%m.%Y %H:%M:%S')}"
         )
 
         data = self.session.query_kline(
-            symbol=symbol, interval=interval, from_time=from_time
+            symbol=symbol.value, interval=interval, from_time=from_time
         )
         df = pd.DataFrame(data.get("result"))
 
         df["start"] = pd.to_datetime(df.open_time, unit="s")
         df["end"] = df.start + timedelta(minutes=interval)
-        df["symbol"] = symbol
+        df["symbol"] = symbol.value
 
         df.open = df.open.astype(float)
         df.high = df.high.astype(float)
@@ -614,7 +631,7 @@ class Bybit:
 
     def get_closed_profit_and_loss(
         self,
-        symbol: str,
+        symbol: Symbol,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
     ) -> dict:
@@ -625,8 +642,8 @@ class Bybit:
         :param end_time:
         :return:
         """
-        params: Dict[str, Union[str, int]] = dict()
-        params["symbol"] = symbol
+        params: Dict[str, Union[str, float, int]] = dict()
+        params["symbol"] = symbol.value
         params["limit"] = 50
         if start_time:
             params["start_time"] = start_time
@@ -639,3 +656,18 @@ class Bybit:
         )
 
         return response.result
+
+    def get_latest_symbol_information(self, symbol: Symbol):
+        response = self.session.latest_information_for_symbol(symbol=symbol.value)
+        # bybit_response = BybitResponse.parse_obj(response)
+        latest_info = LatestInfo.parse_obj(response.get("result")[0])
+        return latest_info
+
+    def find_open_position_orders(self, symbol: Symbol) -> Tuple[list, list]:
+        new_limit_orders = self.get_active_orders(
+            symbol=symbol, order_status="New", order_type="Limit"
+        )
+        open_position_orders = [
+            order for order in new_limit_orders if float(order.stop_loss) > 0
+        ]
+        return new_limit_orders, open_position_orders

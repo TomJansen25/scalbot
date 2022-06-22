@@ -31,6 +31,7 @@ $JOBNAME = scalbot-job-123
 gcloud pubsub topics create $TOPICNAME
 gcloud scheduler jobs create pubsub $JOBNAME --schedule "* * * * *" --topic $TOPICNAME --message-body "EARN MONEY" --location europe-west3
 gcloud functions deploy FUNCTIONNAME --entry-point ENTRYFUNCTION --region europe-west3 --runtime python39 --trigger-topic $TOPICNAME
+gcloud scheduler jobs run $JOBNAME --location europe-west3 # run schedule to test function
 ```
 
 #### Continuous Deployment
