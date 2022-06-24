@@ -210,7 +210,7 @@ class Bybit:
         order_status: Optional[str] = None,
         order_type: Optional[str] = None,
         limit: Optional[int] = None,
-    ) -> list:
+    ) -> list[ActiveOrder]:
 
         params: Dict[str, Union[str, int, float]] = dict()
         if symbol:
@@ -225,12 +225,11 @@ class Bybit:
         params = self._generate_request_params(params=params)
 
         response = self._send_request("GET", self.url + "v2/private/order/list", params)
-        orders: list = response.result.get("data")
+        order_list: list = response.result.get("data")
+        orders = [ActiveOrder.parse_obj(order) for order in order_list]
 
         if order_type:
-            orders = [
-                order for order in orders if order.get("order_type") == order_type
-            ]
+            orders = [order for order in orders if order.order_type == order_type]
 
         logger.info(f"Successfully retrieved {len(orders)} {order_status} orders!")
 
@@ -241,7 +240,7 @@ class Bybit:
         symbol: Symbol,
         order_id: Optional[str] = None,
         order_link_id: Optional[str] = None,
-    ) -> dict:
+    ) -> ActiveOrder:
         params: Dict[str, Union[str, int, float]] = dict(symbol=symbol.value)
         if order_id:
             params["order_id"] = order_id
@@ -250,7 +249,8 @@ class Bybit:
         params = self._generate_request_params(params=params)
 
         response = self._send_request("GET", self.url + "/v2/private/order", params)
-        return response.result
+        active_order = ActiveOrder.parse_obj(response.result)
+        return active_order
 
     def place_active_order(
         self,
@@ -326,7 +326,7 @@ class Bybit:
 
     def get_conditional_orders(
         self, symbol: Optional[Symbol] = None, order_status: Optional[str] = None
-    ) -> list:
+    ) -> list[ConditionalOrder]:
 
         params: Dict[str, Union[str, int, float]] = dict()
         if symbol:
@@ -338,7 +338,8 @@ class Bybit:
         response = self._send_request(
             "GET", self.url + "/v2/private/stop-order/list", params
         )
-        orders: list = response.result.get("data")
+        order_list: list = response.result.get("data")
+        orders = [ConditionalOrder.parse_obj(order) for order in order_list]
 
         return orders
 
@@ -347,7 +348,7 @@ class Bybit:
         symbol: Symbol,
         order_id: Optional[str] = None,
         order_link_id: Optional[str] = None,
-    ):
+    ) -> ConditionalOrder:
         params: Dict[str, Union[str, int, float]] = dict(symbol=symbol.value)
         if order_id:
             params["order_id"] = order_id
@@ -358,7 +359,8 @@ class Bybit:
         response = self._send_request(
             "GET", self.url + "/v2/private/stop-order", params
         )
-        return response.result
+        conditional_order = ConditionalOrder.parse_obj(response.result)
+        return conditional_order
 
     def cancel_conditional_order(
         self,
@@ -441,8 +443,8 @@ class Bybit:
             tps, sls = self.get_untriggered_take_profits_and_stop_losses(
                 symbol=symbol, order_type="Limit"
             )
-            stop_loss_qty = sum([float(sl.get("qty")) for sl in sls])
-            take_profit_qty = sum([float(tp.get("qty")) for tp in tps])
+            stop_loss_qty = sum([float(sl.qty) for sl in sls])
+            take_profit_qty = sum([float(tp.qty) for tp in tps])
 
             logger.info(f"Untriggered Stop Loss Quantity: {stop_loss_qty}")
             logger.info(f"Untriggered Take Profit Quantity: {take_profit_qty}")
@@ -457,7 +459,7 @@ class Bybit:
 
     def get_untriggered_take_profits_and_stop_losses(
         self, symbol: Symbol, order_type: str = "Market"
-    ) -> Tuple[list, list]:
+    ) -> Tuple[list[ConditionalOrder], list[ConditionalOrder]]:
         """
 
         :param symbol:
@@ -471,12 +473,12 @@ class Bybit:
             tps = [
                 o
                 for o in orders
-                if o.get("stop_order_type") in ["PartialTakeProfit", "TakeProfit"]
+                if o.stop_order_type in ["PartialTakeProfit", "TakeProfit"]
             ]
             sls = [
                 o
                 for o in orders
-                if o.get("stop_order_type") in ["PartialStopLoss", "StopLoss"]
+                if o.stop_order_type in ["PartialStopLoss", "StopLoss"]
             ]
         else:
             raise ValueError(
@@ -493,7 +495,7 @@ class Bybit:
 
     def add_take_profit_to_position(
         self, symbol: Symbol, take_profit: float, size: float
-    ):
+    ) -> dict:
         params: Dict[str, Union[str, int, float]] = dict(
             symbol=symbol.value, take_profit=take_profit, tp_size=size
         )
@@ -507,7 +509,9 @@ class Bybit:
         )
         return response.result
 
-    def add_stop_loss_to_position(self, symbol: Symbol, stop_loss: float, size: float):
+    def add_stop_loss_to_position(
+        self, symbol: Symbol, stop_loss: float, size: float
+    ) -> dict:
         params: Dict[str, Union[str, float]] = dict(
             symbol=symbol.value, stop_loss=stop_loss, sl_size=size
         )
@@ -557,7 +561,7 @@ class Bybit:
                     (
                         o
                         for o in tps
-                        if int(float(o.get("stop_px"))) == int(getattr(trade, level))
+                        if int(float(o.stop_px)) == int(getattr(trade, level))
                     ),
                     None,
                 )
@@ -579,7 +583,7 @@ class Bybit:
                 (
                     s
                     for s in sls
-                    if int(float(s.get("stop_px"))) == int(getattr(trade, "stop_loss"))
+                    if int(float(s.stop_px)) == int(getattr(trade, "stop_loss"))
                 ),
                 None,
             )
@@ -593,7 +597,7 @@ class Bybit:
 
     def get_latest_symbol_data_as_df(
         self, symbol: Symbol, interval: int, from_time: int = None
-    ):
+    ) -> pd.DataFrame:
         """
 
         :param symbol:
@@ -657,13 +661,15 @@ class Bybit:
 
         return response.result
 
-    def get_latest_symbol_information(self, symbol: Symbol):
+    def get_latest_symbol_information(self, symbol: Symbol) -> LatestInfo:
         response = self.session.latest_information_for_symbol(symbol=symbol.value)
         # bybit_response = BybitResponse.parse_obj(response)
         latest_info = LatestInfo.parse_obj(response.get("result")[0])
         return latest_info
 
-    def find_open_position_orders(self, symbol: Symbol) -> Tuple[list, list]:
+    def find_open_position_orders(
+        self, symbol: Symbol
+    ) -> Tuple[list[ActiveOrder], list[ActiveOrder]]:
         new_limit_orders = self.get_active_orders(
             symbol=symbol, order_status="New", order_type="Limit"
         )

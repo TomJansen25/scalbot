@@ -22,7 +22,9 @@ class BigQuery(ABC, BaseModel):
         super().__init__(client=Client())
 
     def get_today_trades(
-        self, symbols: Optional[list] = None, brokers: Optional[list] = None
+        self,
+        symbols: Optional[list[Symbol]] = None,
+        brokers: Optional[list[Broker]] = None,
     ) -> pd.DataFrame:
 
         today = datetime.now().strftime("%Y-%m-%d")
@@ -36,9 +38,9 @@ class BigQuery(ABC, BaseModel):
 
         df = self.client.query(qry).to_dataframe()
         if symbols:
-            df = df.loc[df.symbol.isin(symbols)]
+            df = df.loc[df.symbol.isin([symbol.value for symbol in symbols])]
         if brokers:
-            df = df.loc[df.broker.isin(brokers)]
+            df = df.loc[df.broker.isin([broker.value for broker in brokers])]
         return df
 
     def get_last_trade(
@@ -60,9 +62,9 @@ class BigQuery(ABC, BaseModel):
         qry = f"""
         SELECT *
         FROM `scalbot.trades.active_trades`
-        WHERE timestamp = (select max(timestamp) from `scalbot.trades.active_trades`)
-            AND symbol = '{symbol}'
-            AND broker = '{broker}'
+        WHERE symbol = '{symbol}' AND broker = '{broker}'
+        ORDER BY timestamp desc
+        LIMIT 1
         """
         df = self.client.query(qry).to_dataframe()
         trade = Trade.parse_obj(df.squeeze().to_dict())

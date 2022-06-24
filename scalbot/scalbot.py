@@ -31,7 +31,7 @@ from scalbot.utils import get_percentage_occurrences, is_subdict
 
 class Scalbot(BaseModel, ABC):
     """
-    Scalbot Class to start and run bots for several platforms with several strategies
+    Scalbot Class to initialize and run a scalping bot for several Symbols and Brokers
     """
 
     patterns: list[dict] = Field(default_factory=list)
@@ -109,7 +109,7 @@ class Scalbot(BaseModel, ABC):
             )
 
             logger.info(f"Matched orders: {matched_orders}")
-            print(reached_tp_level)
+            logger.info(f"Reached Take Profit Level: {reached_tp_level}")
 
             if reached_tp_level >= 1:
 
@@ -142,7 +142,7 @@ class Scalbot(BaseModel, ABC):
                 if level_set == "order_not_set":
                     side = "Sell" if trade.side == "Buy" else "Buy"
                     order_res = bybit.place_active_order(
-                        symbol=trade.symbol,
+                        symbol=symbol,
                         order_type="Limit",
                         side=side,
                         qty=int(getattr(trade, f"{tp_level}_share")),
@@ -153,7 +153,7 @@ class Scalbot(BaseModel, ABC):
                 logger.info("The position is completely filled, no action to be taken.")
 
         else:
-            logger.info(f"There is no open position for {symbol}...")
+            logger.info(f"There is no open position for {symbol.value}...")
 
             current_time = datetime.now().time()
 
@@ -205,8 +205,6 @@ class Scalbot(BaseModel, ABC):
                 logger.info(
                     "Modulo of current time is not 0, so no further action will be taken"
                 )
-        # except Exception as exception:
-        #   logger.error(f"Error occurred: {exception}")
 
     @staticmethod
     def find_open_take_profits(
@@ -511,8 +509,8 @@ def cancel_invalid_expired_orders(
     cancelled_orders: list[ActiveOrder] = []
 
     for symbol in symbols:
-        open_position = bybit.get_open_position(symbol=symbol.value)
-        open_position_orders = bybit.find_open_position_orders(symbol=symbol)
+        open_position = bybit.get_open_position(symbol=symbol)
+        _, open_position_orders = bybit.find_open_position_orders(symbol=symbol)
         latest_info = bybit.get_latest_symbol_information(symbol=symbol)
 
         if open_position.size == 0 and len(open_position_orders) > 0:
@@ -544,7 +542,7 @@ def cancel_invalid_expired_orders(
 
         for order in invalid_or_expired_orders:
             res = bybit.cancel_active_order(
-                symbol=order.symbol.value, order_id=order.order_id
+                symbol=order.symbol, order_id=order.order_id
             )
             if res:
                 cancelled_orders.append(order)

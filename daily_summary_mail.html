@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            .header {
+                font-size: 1.5em;
+                text-transform: uppercase;
+            }
+            thead {
+                background-color: #FF8800;
+                font-size: 13px;
+                font-weight: 700;
+                text-transform: uppercase;
+            }
+            th {
+                background-color: #FF8800;
+                padding: 5px 15px;
+            }
+            td {
+                padding: 10px 5px;
+                font-size: 12px;
+            }
+            .summary-table {
+                margin: 20px auto;
+                border: black 2px;
+            }
+            img {
+                position: absolute;
+                z-index: 100;
+            }
+        </style>
+    </head>
+    <body style="font-family:Georgia, 'Times New Roman', Times, serif;">
+        <div style="padding: 10px 10px; max-width: 1400px;">
+            <div style="width: 100%;">
+                <div style="background-color: #FF8800; padding:10px 20px; text-align: center;">
+                    <h2 class="header">Daily Scalbot Update</h2>
+                </div>
+                <div style="text-align: center;">
+                    <h3 style="margin-bottom: 30px">Today, {len(df)} trades were made with a total PnL of {} BTCUSD</h3>
+                    <p>Trade overview:</p>
+                    <table border="1" class="dataframe summary-table">  <thead>    <tr style="text-align: center;">      <th>order_link_id</th>      <th>closed_pnl</th>      <th>trade_result</th>      <th>timestamp</th>      <th>source_candle</th>      <th>side</th>      <th>symbol</th>      <th>price</th>      <th>quantity_usd</th>    </tr>  </thead>  <tbody>    <tr>      <td>2d24d5fa-6fcc-4b4b-80c5-7cf0e9210645</td>      <td>0,000060</td>      <td>take_profit_2</td>      <td>2022-06-24 01:12:02.549445+00:00</td>      <td>2022-06-24 01:03:00+00:00</td>      <td>Buy</td>      <td>BTCUSD</td>      <td>20985,0</td>      <td>285</td>    </tr>    <tr>      <td>59242598-0a25-4f7b-a1d2-cc25af988f17</td>      <td>-0,000057</td>      <td>stop_loss</td>      <td>2022-06-24 15:30:01.934931+00:00</td>      <td>2022-06-24 15:21:00+00:00</td>      <td>Buy</td>      <td>BTCUSD</td>      <td>20937,0</td>      <td>285</td>    </tr>    <tr>      <td>59e7d7ee-75cc-4a6f-b198-b5ce173c5457</td>      <td>0,000073</td>      <td>take_profit_3</td>      <td>2022-06-24 07:27:02.046242+00:00</td>      <td>2022-06-24 07:18:00+00:00</td>      <td>Buy</td>      <td>BTCUSD</td>      <td>20784,0</td>      <td>285</td>    </tr>    <tr>      <td>8baa4d7f-35b7-43dd-9143-92cc48de91d9</td>      <td>-0,000050</td>      <td>stop_loss</td>      <td>2022-06-24 12:15:02.445711+00:00</td>      <td>2022-06-24 12:06:00+00:00</td>      <td>Buy</td>      <td>BTCUSD</td>      <td>21120,5</td>      <td>285</td>    </tr>    <tr>      <td>a7157daa-bd66-45b5-8f4d-c3f628efb924</td>      <td>0,000032</td>      <td>take_profit_2</td>      <td>2022-06-24 11:48:02.044516+00:00</td>      <td>2022-06-24 11:39:00+00:00</td>      <td>Sell</td>      <td>BTCUSD</td>      <td>21199,5</td>      <td>285</td>    </tr>    <tr>      <td>dc77e47a-19be-4e4e-9a94-c5dacbaabcdf</td>      <td>-0,000068</td>      <td>stop_loss</td>      <td>2022-06-24 13:48:02.231285+00:00</td>      <td>2022-06-24 13:39:00+00:00</td>      <td>Sell</td>      <td>BTCUSD</td>      <td>21254,0</td>      <td>285</td>    </tr>  </tbody></table>
+                </div>
+            </div>
+        </div>
+    </body>
+</html>

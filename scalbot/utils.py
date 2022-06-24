@@ -21,6 +21,7 @@ def setup_logging(serverless: bool = False):
     Setup Loguru Logging with configure()
     """
     handlers = [dict(sink=sys.stdout, backtrace=False, diagnose=False)]
+    """"
     if not serverless:
         handlers.append(
             dict(
@@ -31,6 +32,7 @@ def setup_logging(serverless: bool = False):
                 diagnose=True,
             )
         )
+    """
     logger.configure(
         handlers=handlers,
         extra={"user": "Tom Jansen"},
@@ -86,3 +88,12 @@ def create_conditional_style(columns: list, pixel_for_char: int):
         style.append({"if": {"column_id": col_id}, "minWidth": f"{pixel}px"})
 
     return style
+
+
+def get_percentual_diff(
+    orig_num: float, new_num: float, absolute: bool = False
+) -> float:
+    diff = (new_num - orig_num) / orig_num
+    if absolute:
+        diff = abs(diff)
+    return diff
