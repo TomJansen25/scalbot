@@ -1,5 +1,6 @@
 ### Project-specific files and directories to ignore
 .git/
+.env.example
 data/
 notebooks/
 tests/

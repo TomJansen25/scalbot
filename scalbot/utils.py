@@ -1,19 +1,39 @@
 import pathlib
 import sys
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
+import numpy as np
+import yaml
 from loguru import logger
 
 
 def get_project_dir() -> pathlib.Path:
     """
-    Always return the absolute Path of the Pricing folder to ensure all files and code can be found in any terminal
-    :return: Absolute path of Pricing folder
+    Returns the absolute path of the main project folder, regardless of running locally or on GCP
+    :return: Absolute path of Scalbot folder
     """
-    path_dir = pathlib.Path().absolute()
-    parts = path_dir.parts[: (path_dir.parts.index("scalbot") + 1)]
+    cwd_dir = pathlib.Path().cwd().absolute()
+    # If executed in a GCP Cloud Function, the working directory is called "/workspace"
+    if cwd_dir == "/workspace":
+        return cwd_dir
+    # If executed on a Local Machine from within the project folder, return the "/scalbot" folder
+    parts = cwd_dir.parts[: (cwd_dir.parts.index("scalbot") + 1)]
     path_dir = pathlib.Path(*parts)
     return path_dir
+
+
+def get_params() -> dict[str, dict[str, dict[str, Any]]]:
+    """
+    Return Scalbot Parameters from params.yaml as dictionary
+    :return: (dict) parameter settings
+    """
+    project_dir = get_project_dir()
+    params_path = project_dir.joinpath("config", "params.yaml")
+    with open(params_path, "r") as params_yaml:
+        params: dict[str, dict[str, dict[str, Any]]] = yaml.load(
+            params_yaml, Loader=yaml.FullLoader
+        )
+    return params
 
 
 def setup_logging(serverless: bool = False):
@@ -21,7 +41,6 @@ def setup_logging(serverless: bool = False):
     Setup Loguru Logging with configure()
     """
     handlers = [dict(sink=sys.stdout, backtrace=False, diagnose=False)]
-    """"
     if not serverless:
         handlers.append(
             dict(
@@ -32,7 +51,6 @@ def setup_logging(serverless: bool = False):
                 diagnose=True,
             )
         )
-    """
     logger.configure(
         handlers=handlers,
         extra={"user": "Tom Jansen"},
@@ -97,3 +115,29 @@ def get_percentual_diff(
     if absolute:
         diff = abs(diff)
     return diff
+
+
+def are_prices_equal_enough(
+    first_price: Union[int, float], second_price: Union[int, float]
+) -> bool:
+    equal = False
+
+    if first_price < 10 or second_price < 10:
+        if np.round(first_price, 3) == np.round(second_price, 3):
+            equal = True
+
+    elif first_price <= 100 or second_price <= 100:
+        if np.round(first_price, 2) == np.round(second_price, 2):
+            equal = True
+
+    elif first_price <= 1000 or second_price <= 1000:
+        if np.round(first_price, 1) == np.round(second_price, 1):
+            equal = True
+
+    else:  # first_price > 1000 or second_price > 1000
+        first_price = round(float(first_price) * 2) / 2
+        second_price = round(float(second_price) * 2) / 2
+        if np.round(first_price, 1) == np.round(second_price):
+            equal = True
+
+    return equal

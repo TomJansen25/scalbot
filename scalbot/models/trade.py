@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 import numpy as np
 from pydantic import UUID4, BaseModel, Field, root_validator, validator
 
-from scalbot.enums import Broker, Symbol
+from scalbot.enums import Broker, Side, Symbol
 
 
 def uuid_as_string():
@@ -16,7 +16,7 @@ class Trade(BaseModel):
     timestamp: datetime
     source_candle: datetime
     pattern: Union[str, dict, None] = None
-    side: str = Field(default="Buy")
+    side: Side = Field(default=Side.BUY)
     symbol: Symbol = Field(default=Symbol.BTCUSD)
     price: float = Field()
     quantity_usd: int

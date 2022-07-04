@@ -1,7 +1,7 @@
 import logging
 from abc import ABC
 from datetime import date, datetime
-from typing import Optional
+from typing import Optional, Tuple, Union
 from uuid import uuid4
 
 import numpy as np
@@ -71,26 +71,55 @@ class TradingStrategy(ABC, BaseModel):
             take_profit_3_share=take_profit_3_share,
         )
 
+    @staticmethod
+    def _round_trade_price(price: Union[int, float]):
+        if price <= 10:
+            price = np.round(price / 0.005) * 0.005
+            return np.round(price, 3)
+        elif price <= 100:
+            return np.round(price, 2)
+        elif price <= 1000:
+            price = np.round(price / 0.05) * 0.05
+            return np.round(price, 2)
+        elif price < 10000:
+            return np.round(price, 1)
+        else:  # price > 10000
+            price = np.round(price / 0.5) * 0.5
+            return np.round(price, 1)
+
     def get_sample_trade(self, price: int = 35000) -> Trade:
 
         quantity_usd = int(self.bet_amount * (self.risk / self.stop_loss))
+        stop_loss = price + (price * self.stop_loss)
+        tp1 = price - (price * self.take_profit_1)
+        tp2 = price - (price * self.take_profit_2)
+        tp3 = price - (price * self.take_profit_3)
+
+        tp_shares = divide_quantity_over_shares(
+            quantity=quantity_usd,
+            shares={
+                "tp1_share": self.take_profit_1_share,
+                "tp2_share": self.take_profit_2_share,
+                "tp3_share": self.take_profit_3_share,
+            },
+        )
 
         return Trade(
             timestamp=datetime.now(),
             source_candle=datetime.now(),
-            pattern="",
+            pattern={"color": "red", "prev_color_1": "green"},
             side="Buy",
             symbol="BTCUSD",
             price=price,
             quantity_usd=quantity_usd,
             position_size=quantity_usd / price,
-            stop_loss=np.round(price + (price * self.stop_loss), 2),
-            take_profit_1=np.round(price - (price * self.take_profit_1), 2),
-            take_profit_1_share=0.4,
-            take_profit_2=np.round(price - (price * self.take_profit_2), 2),
-            take_profit_2_share=0.3,
-            take_profit_3=np.round(price - (price * self.take_profit_3), 2),
-            take_profit_3_share=0.3,
+            stop_loss=self._round_trade_price(stop_loss),
+            take_profit_1=self._round_trade_price(tp1),
+            take_profit_1_share=tp_shares.get("tp1_share"),
+            take_profit_2=self._round_trade_price(tp2),
+            take_profit_2_share=tp_shares.get("tp2_share"),
+            take_profit_3=self._round_trade_price(tp3),
+            take_profit_3_share=tp_shares.get("tp3_share"),
             order_link_id=uuid4(),
         )
 
@@ -141,18 +170,258 @@ class TradingStrategy(ABC, BaseModel):
             pattern=pattern,
             side=side,
             symbol=candle.symbol,
-            price=price,
+            price=self._round_trade_price(price),
             quantity_usd=quantity_usd,
             position_size=quantity_usd / price,
-            stop_loss=np.round(stop_loss, 2),
-            take_profit_1=np.round(tp1, 2),
+            stop_loss=self._round_trade_price(stop_loss),
+            take_profit_1=self._round_trade_price(tp1),
             take_profit_1_share=tp_shares.get("tp1_share"),
-            take_profit_2=np.round(tp2, 2),
+            take_profit_2=self._round_trade_price(tp2),
             take_profit_2_share=tp_shares.get("tp2_share"),
-            take_profit_3=np.round(tp3, 2),
+            take_profit_3=self._round_trade_price(tp3),
             take_profit_3_share=tp_shares.get("tp3_share"),
             order_link_id=uuid4(),
         )
+
+
+class TradeSummary(ABC, BaseModel):
+    broker: Broker
+    symbols: list[Symbol]
+    bybit: Bybit
+    bigquery_client: BigQuery
+    today_datetime: Optional[datetime] = None
+    today_timestamp: Optional[int] = None
+
+    class Config:
+        arbitrary_types_allowed = True
+
+    def __init__(self, broker: Broker, symbols: list[Symbol], bybit: Bybit):
+        """
+
+        :param broker:
+        :param symbols
+        :param bybit::
+        """
+        super().__init__(
+            broker=broker,
+            symbols=symbols,
+            bybit=bybit,
+            bigquery_client=BigQuery(),
+        )
+
+        self.today_datetime, self.today_timestamp = self.get_today_timestamps()
+
+    def get_today_timestamps(self) -> Tuple[datetime, int]:
+        if not self.today_datetime or not self.today_timestamp:
+            today = date.today()
+            today_datetime = datetime(today.year, today.month, today.day).astimezone(
+                pytz.UTC
+            )
+            today_timestamp = int(today_datetime.timestamp())
+            self.today_datetime = today_datetime
+            self.today_timestamp = today_timestamp
+            return today_datetime, today_timestamp
+        else:
+            return self.today_datetime, self.today_timestamp
+
+    def get_today_pnl(self, symbol: Symbol) -> pd.DataFrame:
+        pnls = self.bybit.get_closed_profit_and_loss(
+            symbol=symbol, start_time=int(self.today_timestamp)
+        )
+        if not pnls.get("data"):
+            err_msg = (
+                "Retrieved PnL data is empty, no profit and losses "
+                "for today could be retrieved."
+            )
+            logger.error(err_msg)
+            raise ValueError(err_msg)
+        pnl_df = pd.DataFrame(pnls.get("data"))
+        pnl_df["created_at"] = pd.to_datetime(pnl_df.created_at, unit="s")
+        pnl_df = pnl_df.drop(
+            ["id", "user_id", "exec_type", "fill_count", "leverage"], 1
+        )
+        pnl_df = pnl_df.rename(columns={"created_at": "pnl_created_at"})
+        return pnl_df
+
+    def get_today_orders(self, symbol: Symbol) -> pd.DataFrame:
+        orders = self.bybit.get_active_orders(symbol=symbol, limit=50)
+
+        orders_df = pd.DataFrame([order.dict() for order in orders])
+
+        orders_df["created_at"] = pd.to_datetime(orders_df.created_at)
+        orders_df["updated_at"] = pd.to_datetime(orders_df.updated_at)
+
+        orders_df = orders_df.loc[orders_df.created_at > self.today_datetime]
+
+        orders_df = orders_df.drop(
+            [
+                "user_id",
+                "position_idx",
+                "time_in_force",
+                "leaves_qty",
+                "leaves_value",
+                "tp_trigger_by",
+                "sl_trigger_by",
+            ],
+            axis=1,
+        )
+
+        orders_df.qty = orders_df.qty.astype("int64")
+
+        logger.info(
+            f"{len(orders_df)} orders from today on {symbol.value} were retrieved"
+        )
+        return orders_df
+
+    @staticmethod
+    def _get_trade_result_from_filled_tps_sls(
+        filled_tps_sls: list[str], as_string: bool = False
+    ) -> Union[TradeResult, str]:
+        if TradeResult.TAKE_PROFIT_3 in filled_tps_sls:
+            res = TradeResult.TAKE_PROFIT_3
+        elif TradeResult.TAKE_PROFIT_2 in filled_tps_sls:
+            res = TradeResult.TAKE_PROFIT_2
+        elif TradeResult.TAKE_PROFIT_1 in filled_tps_sls:
+            res = TradeResult.TAKE_PROFIT_1
+        else:
+            res = TradeResult.STOP_LOSS
+
+        if as_string:
+            return res.value
+        return res
+
+    def _get_symbol_prices_as_df(self, symbols: list[Symbol]) -> pd.DataFrame:
+        price_dict = {}
+
+        for symbol in symbols:
+            latest_info = self.bybit.get_latest_symbol_information(symbol=symbol)
+            price_dict[symbol.value] = latest_info.last_price
+
+        df = pd.DataFrame.from_dict(
+            {"symbol": price_dict.keys(), "price_usd": price_dict.values()}
+        )
+        return df
+
+    def get_trade_summary_as_df(self) -> pd.DataFrame:
+        trade_summary_dfs = []
+
+        for symbol in self.symbols:
+            pnl_df = self.get_today_pnl(symbol=symbol)
+            orders_df = self.get_today_orders(symbol=symbol)
+            orders_pnl_df = orders_df.merge(
+                pnl_df.drop(columns=["side", "order_type"]),
+                how="left",
+                on=["symbol", "order_id", "qty"],
+            )
+
+            today_trades_df = self.bigquery_client.get_today_trades(symbols=[symbol])
+            today_trades_df["next_ts"] = today_trades_df.timestamp.shift(-1)
+
+            full_df = orders_pnl_df.merge(
+                today_trades_df[["order_id", "order_link_id", "price"]],
+                on="order_id",
+                how="left",
+                suffixes=("", "_trade"),
+            )
+            full_df.order_link_id_trade = full_df.order_link_id_trade.fillna(
+                method="backfill"
+            )
+
+            tp_sl_trades_df = today_trades_df.melt(
+                id_vars=["order_link_id"],
+                value_vars=["take_profit_1", "take_profit_2", "take_profit_3"],
+                var_name="tp_sl_type",
+                value_name="calc_price",
+            )
+            tp_sl_trades_df.calc_price = tp_sl_trades_df.calc_price.astype(int)
+
+            full_df.price = full_df.price.astype(int)
+            full_df = full_df.merge(
+                tp_sl_trades_df,
+                left_on=["order_link_id_trade", "price"],
+                right_on=["order_link_id", "calc_price"],
+                how="left",
+            )
+
+            full_df.calc_price = full_df.calc_price.fillna(full_df.price)
+            full_df.tp_sl_type = full_df.tp_sl_type.fillna("stop_loss")
+
+            full_df = full_df.loc[
+                full_df.closed_pnl.notna(),
+                [
+                    "order_type",
+                    "price",
+                    "qty",
+                    "created_at",
+                    "updated_at",
+                    "order_link_id_trade",
+                    "order_id",
+                    "closed_pnl",
+                    "pnl_created_at",
+                    "calc_price",
+                    "tp_sl_type",
+                ],
+            ].sort_values("created_at", ascending=False)
+
+            trade_summary_df = (
+                full_df.groupby("order_link_id_trade")
+                .agg({"closed_pnl": "sum", "tp_sl_type": "unique"})
+                .reset_index()
+                .rename(columns={"order_link_id_trade": "order_link_id"})
+            )
+
+            trade_summary_df["trade_result"] = trade_summary_df.apply(
+                lambda x: self._get_trade_result_from_filled_tps_sls(
+                    x.tp_sl_type, as_string=True
+                ),
+                axis=1,
+            )
+
+            trade_summary_df = trade_summary_df.drop(columns=["tp_sl_type"]).merge(
+                today_trades_df[
+                    [
+                        "order_link_id",
+                        "timestamp",
+                        "source_candle",
+                        "side",
+                        "symbol",
+                        "price",
+                        "quantity_usd",
+                    ]
+                ],
+                on="order_link_id",
+                how="left",
+            )
+
+            trade_summary_df["pnl_usd"] = (
+                trade_summary_df.closed_pnl * trade_summary_df.price
+            )
+            trade_summary_dfs.append(trade_summary_df)
+
+        trade_summary_df = pd.concat(trade_summary_dfs, ignore_index=True).sort_values(
+            by="timestamp"
+        )
+
+        trade_summary_df.timestamp = trade_summary_df.timestamp.dt.strftime(
+            "%Y-%m-%d %H:%M"
+        )
+        trade_summary_df.source_candle = trade_summary_df.source_candle.dt.strftime(
+            "%Y-%m-%d %H:%M"
+        )
+        trade_summary_df.columns = [
+            "Order Link ID",
+            "Closed PnL",
+            "Trade Result",
+            "Trade Timestamp",
+            "Source Candle Timestamp",
+            "Side",
+            "Symbol",
+            "Price",
+            "Quantity (USD)",
+            "PnL (USD)",
+        ]
+
+        return trade_summary_df
 
 
 def divide_quantity_over_shares(
@@ -173,203 +442,3 @@ def divide_quantity_over_shares(
         calculated_shares[first_key] = calculated_shares.get(first_key, 0) + diff
 
     return calculated_shares
-
-
-class TradeSummary(ABC, BaseModel):
-    broker: Broker
-    symbol: Symbol
-    bybit: Bybit
-    bigquery_client: BigQuery
-    today_datetime: Optional[datetime] = None
-    today_timestamp: Optional[float] = None
-
-    class Config:
-        arbitrary_types_allowed = True
-
-    def __init__(self, broker: Broker, symbol: Symbol, bybit: Bybit):
-        """
-
-        :param broker:
-        :param symbol:
-        """
-        super().__init__(
-            broker=broker,
-            symbol=symbol,
-            bybit=bybit,
-            bigquery_client=BigQuery(),
-        )
-
-        self.set_today_timestamps()
-
-    def set_today_timestamps(self):
-        today = date.today()
-        today_datetime = datetime(today.year, today.month, today.day).astimezone(
-            pytz.UTC
-        )
-        today_timestamp = today_datetime.timestamp()
-        self.today_datetime = today_datetime
-        self.today_timestamp = today_timestamp
-
-    def get_today_pnl(self) -> pd.DataFrame:
-        pnls = self.bybit.get_closed_profit_and_loss(
-            symbol=self.symbol, start_time=int(self.today_timestamp)
-        )
-        pnl_df = pd.DataFrame(pnls.get("data"))
-        pnl_df["created_at"] = pd.to_datetime(pnl_df.created_at, unit="s")
-        pnl_df = pnl_df.drop(
-            ["id", "user_id", "exec_type", "fill_count", "leverage"], 1
-        )
-        pnl_df = pnl_df.rename(columns={"created_at": "pnl_created_at"})
-        return pnl_df
-
-    def get_today_orders(self) -> pd.DataFrame:
-        orders = self.bybit.get_active_orders(symbol=Symbol.BTCUSD, limit=50)
-        orders_df = pd.DataFrame([order.dict() for order in orders])
-        orders_df["created_at"] = pd.to_datetime(orders_df.created_at)
-        orders_df["updated_at"] = pd.to_datetime(orders_df.updated_at)
-        orders_df = orders_df.loc[orders_df.created_at > self.today_datetime]
-        orders_df = orders_df.drop(
-            [
-                "user_id",
-                "position_idx",
-                "time_in_force",
-                "leaves_qty",
-                "leaves_value",
-                "tp_trigger_by",
-                "sl_trigger_by",
-            ],
-            1,
-        )
-        orders_df.qty = orders_df.qty.astype("int64")
-        logger.info(
-            f"{len(orders_df)} orders from today on {self.symbol.value} were retrieved"
-        )
-        return orders_df
-
-    @staticmethod
-    def _get_trade_result_from_filled_tps_sls(
-        filled_tps_sls: list[str], as_string: bool = False
-    ) -> TradeResult:
-        if TradeResult.TAKE_PROFIT_3 in filled_tps_sls:
-            res = TradeResult.TAKE_PROFIT_3
-        elif TradeResult.TAKE_PROFIT_2 in filled_tps_sls:
-            res = TradeResult.TAKE_PROFIT_2
-        elif TradeResult.TAKE_PROFIT_1 in filled_tps_sls:
-            res = TradeResult.TAKE_PROFIT_1
-        else:
-            res = TradeResult.STOP_LOSS
-
-        if as_string:
-            res = res.value
-        return res
-
-    def get_trade_summary_as_df(self) -> pd.DataFrame:
-        pnl_df = self.get_today_pnl()
-        orders_df = self.get_today_orders()
-        orders_pnl_df = pd.merge(
-            orders_df,
-            pnl_df.drop(["side", "order_type"], axis=1),
-            how="left",
-            on=["symbol", "order_id", "qty"],
-        )
-
-        today_trades_df = self.bigquery_client.get_today_trades(symbols=[self.symbol])
-        today_trades_df["next_ts"] = today_trades_df.timestamp.shift(-1)
-
-        full_df = orders_pnl_df.merge(
-            today_trades_df[["order_id", "order_link_id", "price"]],
-            on="order_id",
-            how="left",
-            suffixes=("", "_trade"),
-        )
-        full_df.order_link_id_trade = full_df.order_link_id_trade.fillna(
-            method="backfill"
-        )
-
-        tp_sl_trades_df = today_trades_df.melt(
-            id_vars=["order_link_id"],
-            value_vars=["take_profit_1", "take_profit_2", "take_profit_3"],
-            var_name="tp_sl_type",
-            value_name="calc_price",
-        )
-
-        full_df = full_df.merge(
-            tp_sl_trades_df,
-            left_on=["order_link_id_trade", "price"],
-            right_on=["order_link_id", "calc_price"],
-            how="left",
-        )
-
-        full_df.calc_price = full_df.calc_price.fillna(full_df.price)
-        full_df.tp_sl_type = full_df.tp_sl_type.fillna("stop_loss")
-
-        full_df = full_df.loc[
-            full_df.closed_pnl.notna(),
-            [
-                "order_type",
-                "price",
-                "qty",
-                "created_at",
-                "updated_at",
-                "order_link_id_trade",
-                "order_id",
-                "closed_pnl",
-                "pnl_created_at",
-                "calc_price",
-                "tp_sl_type",
-            ],
-        ].sort_values("created_at", ascending=False)
-
-        trade_summary_df = (
-            full_df.groupby("order_link_id_trade")
-            .agg({"closed_pnl": "sum", "tp_sl_type": "unique"})
-            .reset_index()
-            .rename(columns={"order_link_id_trade": "order_link_id"})
-        )
-
-        trade_summary_df["trade_result"] = trade_summary_df.apply(
-            lambda x: self._get_trade_result_from_filled_tps_sls(
-                x.tp_sl_type, as_string=True
-            ),
-            axis=1,
-        )
-
-        trade_summary_df = (
-            trade_summary_df.drop("tp_sl_type", 1)
-            .merge(
-                today_trades_df[
-                    [
-                        "order_link_id",
-                        "timestamp",
-                        "source_candle",
-                        "side",
-                        "symbol",
-                        "price",
-                        "quantity_usd",
-                    ]
-                ],
-                on="order_link_id",
-                how="left",
-            )
-            .sort_values(by="timestamp")
-        )
-
-        trade_summary_df.timestamp = trade_summary_df.timestamp.dt.strftime(
-            "%Y-%m-%d %H:%M"
-        )
-        trade_summary_df.source_candle = trade_summary_df.source_candle.dt.strftime(
-            "%Y-%m-%d %H:%M"
-        )
-        trade_summary_df.columns = [
-            "Order Link ID",
-            "Closed PnL",
-            "Trade Result",
-            "Trade Timestamp",
-            "Source Candle Timestamp",
-            "Side",
-            "Symbol",
-            "Price",
-            "Quantity (USD)",
-        ]
-
-        return trade_summary_df

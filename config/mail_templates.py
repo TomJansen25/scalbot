@@ -1,0 +1,50 @@
+daily_summary_mail = """
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            .header {
+                font-size: 1.5em;
+                text-transform: uppercase;
+            }
+            thead {
+                background-color: #FF8800;
+                font-size: 13px;
+                font-weight: 700;
+                text-transform: uppercase;
+            }
+            th {
+                background-color: #FF8800;
+                padding: 5px 15px;
+            }
+            td {
+                padding: 10px 5px;
+                font-size: 12px;
+            }
+            .summary-table {
+                margin: 20px auto;
+                border: black 2px;
+            }
+            img {
+                position: absolute;
+                z-index: 100;
+            }
+        </style>
+    </head>
+    <body style="font-family:Georgia, 'Times New Roman', Times, serif;">
+        <div style="padding: 10px 10px; max-width: 1400px;">
+            <div style="width: 100%;">
+                <div style="background-color: #FF8800; padding:10px 20px; text-align: center;">
+                    <h2 class="header">Daily Scalbot Update</h2>
+                </div>
+                <div style="text-align: center;">
+                    <h3 style="margin-bottom: 30px">Today, ${num_trades} trades were made with a total PnL of ${total_pnl} BTCUSD</h3>
+                    <p>Trade overview:</p>
+                    ${table}
+                </div>
+            </div>
+        </div>
+    </body>
+</html>
+"""

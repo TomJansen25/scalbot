@@ -26,7 +26,11 @@ from scalbot.models import (
 )
 from scalbot.technical_indicators import calc_sma
 from scalbot.trades import TradingStrategy
-from scalbot.utils import get_percentage_occurrences, is_subdict
+from scalbot.utils import (
+    are_prices_equal_enough,
+    get_percentage_occurrences,
+    is_subdict,
+)
 
 
 class Scalbot(BaseModel, ABC):
@@ -118,14 +122,14 @@ class Scalbot(BaseModel, ABC):
                 )
                 stop_loss = sls[0]
 
-                if int(trade.price) != int(float(stop_loss.get("stop_px"))):
+                if are_prices_equal_enough(trade.price, float(stop_loss.stop_px)):
                     logger.info(
                         "Take Profit Level 1 has been reached, but Stop Loss is still the "
                         "original. Stop Loss will be cancelled and set to the trade price"
                     )
                     bybit.cancel_conditional_order(
                         symbol=symbol,
-                        stop_order_id=stop_loss.get("stop_order_id"),
+                        stop_order_id=stop_loss.stop_order_id,
                     )
                     bybit.add_stop_loss_to_position(
                         symbol=symbol,
@@ -228,7 +232,7 @@ class Scalbot(BaseModel, ABC):
 
     @logger.catch
     def match_open_orders_to_trade(
-        self, position: OpenPosition, orders: list, trade: Trade
+        self, position: OpenPosition, orders: list[ActiveOrder], trade: Trade
     ) -> Tuple[dict, int]:
 
         matched_orders = {}
@@ -238,9 +242,14 @@ class Scalbot(BaseModel, ABC):
             position=position, trade=trade
         )
 
+        order_list = {
+            order.order_id: dict(price=order.price, qty=order.qty) for order in orders
+        }
+        logger.info(f"Retrieved open Take Profit orders {order_list}")
+
         for level in required_take_profit_levels:
-            tp_price = float(getattr(trade, level))
-            tp_size = int(getattr(trade, f"{level}_share"))
+            tp_price = getattr(trade, level)
+            tp_size = getattr(trade, f"{level}_share")
 
             if filled_position_size == position.size:
                 matched_orders[level] = "order_already_filled"
@@ -249,8 +258,8 @@ class Scalbot(BaseModel, ABC):
                 (
                     order
                     for order in orders
-                    if float(order.get("price")) == tp_price
-                    and int(order.get("qty")) == tp_size
+                    if float(order.price) == float(tp_price)
+                    and int(order.qty) == int(tp_size)
                 ),
                 None,
             )
@@ -542,12 +551,12 @@ def cancel_invalid_expired_orders(
 
         for order in invalid_or_expired_orders:
             res = bybit.cancel_active_order(
-                symbol=order.symbol, order_id=order.order_id
+                symbol=Symbol[str(order.symbol)], order_id=order.order_id
             )
             if res:
                 cancelled_orders.append(order)
                 logger.info(
-                    f"Order {order.order_id} for {order.symbol.value} successfully cancelled!"
+                    f"Order {order.order_id} for {order.symbol} successfully cancelled!"
                 )
     else:
         logger.info(
