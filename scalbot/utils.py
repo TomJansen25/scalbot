@@ -14,11 +14,12 @@ def get_project_dir() -> pathlib.Path:
     """
     cwd_dir = pathlib.Path().cwd().absolute()
     # If executed in a GCP Cloud Function, the working directory is called "/workspace"
-    if cwd_dir == "/workspace":
-        return cwd_dir
+    if cwd_dir == pathlib.Path("/workspace"):
+        path_dir = cwd_dir
     # If executed on a Local Machine from within the project folder, return the "/scalbot" folder
-    parts = cwd_dir.parts[: (cwd_dir.parts.index("scalbot") + 1)]
-    path_dir = pathlib.Path(*parts)
+    else:
+        parts = cwd_dir.parts[: (cwd_dir.parts.index("scalbot") + 1)]
+        path_dir = pathlib.Path(*parts)
     return path_dir
 
 
@@ -36,12 +37,12 @@ def get_params() -> dict[str, dict[str, dict[str, Any]]]:
     return params
 
 
-def setup_logging(serverless: bool = False):
+def setup_logging(write_to_file: bool = False):
     """
     Setup Loguru Logging with configure()
     """
     handlers = [dict(sink=sys.stdout, backtrace=False, diagnose=False)]
-    if not serverless:
+    if write_to_file:
         handlers.append(
             dict(
                 sink=get_project_dir().joinpath("log.log"),

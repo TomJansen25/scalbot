@@ -7,6 +7,7 @@ from email.message import EmailMessage
 from string import Template
 from typing import Literal, Optional, Union
 
+import pandas as pd
 from loguru import logger
 from pydantic import BaseModel, validator
 
@@ -57,7 +58,7 @@ class Email(ABC, BaseModel):
             email_receiver=email_receiver,
         )
 
-    def set_message_template(self, template: Literal["daily_trade_summary", ""]):
+    def set_message_template(self, template: str):
         if template == "daily_trade_summary":
             file_path = get_project_dir().joinpath("config", "daily_summary_mail.html")
         else:
@@ -71,6 +72,25 @@ class Email(ABC, BaseModel):
         with open(file_path, "r", encoding="utf-8") as f:
             html_content = f.read()
         self.message_template = html_content
+
+    @staticmethod
+    def get_template_variables_from_df(template: str, df: pd.DataFrame) -> dict:
+        if template == "daily_trade_summary":
+            variables = dict(
+                num_trades=len(df),
+                total_pnl=df["PnL (USD)"].sum(),
+                table=df.to_html(
+                    index=False, classes="summary-table", justify="center", decimal=","
+                ),
+            )
+        else:
+            err = (
+                f"Provided Template ({template}) is not supported yet... Please choose on of "
+                f"the following: 'daily_trade_summary'."
+            )
+            logger.error(err)
+            raise KeyError(err)
+        return variables
 
     def fill_message_template(
         self, variable_substitutes: dict[str, Union[str, int, float]]
