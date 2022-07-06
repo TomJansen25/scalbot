@@ -38,3 +38,8 @@ class ConditionalOrder(BaseOrder):
     stop_order_id: str
     stop_px: float
     trigger_by: str
+
+
+class MinifiedOrder(BaseModel):
+    price: float
+    qty: int

@@ -145,24 +145,18 @@ def test_cancel_invalid_expired_orders(symbols: list[Symbol]):
 
 
 @app.command()
-def test_send_daily_summary(
-    symbol: Symbol = Symbol.BTCUSD, broker: Broker = Broker.BYBIT
-):
+def test_send_daily_summary(symbol: list[Symbol], broker: Broker = Broker.BYBIT.value):
     bybit = Bybit()
 
-    trade_summarizer = TradeSummary(broker=broker, symbols=[symbol], bybit=bybit)
+    trade_summarizer = TradeSummary(broker=broker, symbols=symbol, bybit=bybit)
     trade_summary_df = trade_summarizer.get_trade_summary_as_df()
 
-    variables = dict(
-        num_trades=len(trade_summary_df),
-        total_pnl=trade_summary_df["Closed PnL"].sum(),
-        table=trade_summary_df.to_html(
-            index=False, classes="summary-table", justify="center", decimal=","
-        ),
-    )
-
+    template = "daily_trade_summary"
     emailer = Email(email_sender=EMAIL, email_receiver=EMAIL)
-    emailer.set_message_template(template="daily_trade_summary")
+    emailer.set_message_template(template=template)
+    variables = emailer.get_template_variables_from_df(
+        template=template, df=trade_summary_df
+    )
     emailer.fill_message_template(variable_substitutes=variables)
     emailer.prepare_message(
         subject=f"Scalbot Summary {datetime.now().strftime('%d-%m-%Y')}",

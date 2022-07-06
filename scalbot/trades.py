@@ -71,22 +71,6 @@ class TradingStrategy(ABC, BaseModel):
             take_profit_3_share=take_profit_3_share,
         )
 
-    @staticmethod
-    def _round_trade_price(price: Union[int, float]):
-        if price <= 10:
-            price = np.round(price / 0.005) * 0.005
-            return np.round(price, 3)
-        elif price <= 100:
-            return np.round(price, 2)
-        elif price <= 1000:
-            price = np.round(price / 0.05) * 0.05
-            return np.round(price, 2)
-        elif price < 10000:
-            return np.round(price, 1)
-        else:  # price > 10000
-            price = np.round(price / 0.5) * 0.5
-            return np.round(price, 1)
-
     def get_sample_trade(self, price: int = 35000) -> Trade:
 
         quantity_usd = int(self.bet_amount * (self.risk / self.stop_loss))
@@ -113,12 +97,12 @@ class TradingStrategy(ABC, BaseModel):
             price=price,
             quantity_usd=quantity_usd,
             position_size=quantity_usd / price,
-            stop_loss=self._round_trade_price(stop_loss),
-            take_profit_1=self._round_trade_price(tp1),
+            stop_loss=round_trade_price(stop_loss),
+            take_profit_1=round_trade_price(tp1),
             take_profit_1_share=tp_shares.get("tp1_share"),
-            take_profit_2=self._round_trade_price(tp2),
+            take_profit_2=round_trade_price(tp2),
             take_profit_2_share=tp_shares.get("tp2_share"),
-            take_profit_3=self._round_trade_price(tp3),
+            take_profit_3=round_trade_price(tp3),
             take_profit_3_share=tp_shares.get("tp3_share"),
             order_link_id=uuid4(),
         )
@@ -170,15 +154,15 @@ class TradingStrategy(ABC, BaseModel):
             pattern=pattern,
             side=side,
             symbol=candle.symbol,
-            price=self._round_trade_price(price),
+            price=round_trade_price(price),
             quantity_usd=quantity_usd,
             position_size=quantity_usd / price,
-            stop_loss=self._round_trade_price(stop_loss),
-            take_profit_1=self._round_trade_price(tp1),
+            stop_loss=round_trade_price(stop_loss),
+            take_profit_1=round_trade_price(tp1),
             take_profit_1_share=tp_shares.get("tp1_share"),
-            take_profit_2=self._round_trade_price(tp2),
+            take_profit_2=round_trade_price(tp2),
             take_profit_2_share=tp_shares.get("tp2_share"),
-            take_profit_3=self._round_trade_price(tp3),
+            take_profit_3=round_trade_price(tp3),
             take_profit_3_share=tp_shares.get("tp3_share"),
             order_link_id=uuid4(),
         )
@@ -277,11 +261,11 @@ class TradeSummary(ABC, BaseModel):
     def _get_trade_result_from_filled_tps_sls(
         filled_tps_sls: list[str], as_string: bool = False
     ) -> Union[TradeResult, str]:
-        if TradeResult.TAKE_PROFIT_3 in filled_tps_sls:
+        if TradeResult.TAKE_PROFIT_3.value in filled_tps_sls:
             res = TradeResult.TAKE_PROFIT_3
-        elif TradeResult.TAKE_PROFIT_2 in filled_tps_sls:
+        elif TradeResult.TAKE_PROFIT_2.value in filled_tps_sls:
             res = TradeResult.TAKE_PROFIT_2
-        elif TradeResult.TAKE_PROFIT_1 in filled_tps_sls:
+        elif TradeResult.TAKE_PROFIT_1.value in filled_tps_sls:
             res = TradeResult.TAKE_PROFIT_1
         else:
             res = TradeResult.STOP_LOSS
@@ -333,9 +317,7 @@ class TradeSummary(ABC, BaseModel):
                 var_name="tp_sl_type",
                 value_name="calc_price",
             )
-            tp_sl_trades_df.calc_price = tp_sl_trades_df.calc_price.astype(int)
 
-            full_df.price = full_df.price.astype(int)
             full_df = full_df.merge(
                 tp_sl_trades_df,
                 left_on=["order_link_id_trade", "price"],
@@ -442,3 +424,19 @@ def divide_quantity_over_shares(
         calculated_shares[first_key] = calculated_shares.get(first_key, 0) + diff
 
     return calculated_shares
+
+
+def round_trade_price(price: Union[int, float]):
+    if price <= 10:
+        price = np.round(price / 0.005) * 0.005
+        return np.round(price, 3)
+    elif price <= 100:
+        return np.round(price, 2)
+    elif price <= 1000:
+        price = np.round(price / 0.05) * 0.05
+        return np.round(price, 2)
+    elif price < 10000:
+        return np.round(price, 1)
+    else:  # price > 10000
+        price = np.round(price / 0.5) * 0.5
+        return np.round(price, 1)

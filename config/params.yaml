@@ -8,7 +8,7 @@ BTCUSD:
     trading_strategy:
         bet_amount: 100
         risk: 0.01
-        stop_loss: 0.0025
+        stop_loss: 0.0035
         take_profit_1: 0.0035
         take_profit_1_share: 0.40
         take_profit_2: 0.0060

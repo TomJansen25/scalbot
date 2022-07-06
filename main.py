@@ -12,7 +12,7 @@ from scalbot.trades import TradeSummary, TradingStrategy
 from scalbot.utils import get_params, setup_logging
 
 load_dotenv()
-setup_logging(serverless=True)
+setup_logging(write_to_file=False)
 
 SYMBOLS = [Symbol.BTCUSD, Symbol.DOTUSD]
 
@@ -62,40 +62,17 @@ def send_daily_summary(event, context):
     trade_summarizer = TradeSummary(broker=Broker.BYBIT, symbols=SYMBOLS, bybit=BYBIT)
     trade_summary_df = trade_summarizer.get_trade_summary_as_df()
 
-    variables = dict(
-        num_trades=len(trade_summary_df),
-        total_pnl=trade_summary_df["Closed PnL"].sum(),
-        table=trade_summary_df.to_html(
-            index=False, classes="summary-table", justify="center", decimal=","
-        ),
-    )
-
     email = "tomjansen25@gmail.com"
+    template = "daily_trade_summary"
+
     emailer = Email(email_sender=email, email_receiver=email)
     emailer.set_message_template(template="daily_trade_summary")
+    variables = emailer.get_template_variables_from_df(
+        template=template, df=trade_summary_df
+    )
     emailer.fill_message_template(variable_substitutes=variables)
     emailer.prepare_message(
         subject=f"Scalbot Summary {datetime.now().strftime('%d-%m-%Y')}",
         message_type="html",
     )
     emailer.send_email()
-
-
-def list_files(request):
-    import os
-    import pathlib
-    from os import path
-
-    root = path.dirname(path.abspath(__file__))
-    print(root)
-    cwd = pathlib.Path().cwd()
-
-    print(cwd, cwd.absolute())
-    params = cwd.joinpath("config", "params.yaml")
-    print(params, params.exists())
-
-    children = os.listdir(root)
-    print(children)
-    files = [c for c in children if path.isfile(path.join(root, c))]
-    print(files)
-    return "Files: {}".format(files)
