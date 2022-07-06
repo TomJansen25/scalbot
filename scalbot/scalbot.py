@@ -21,6 +21,7 @@ from scalbot.models import (
     Candle,
     ConditionalOrder,
     LatestInfo,
+    MinifiedOrder,
     OpenPosition,
     Trade,
 )
@@ -100,7 +101,7 @@ class Scalbot(BaseModel, ABC):
 
             trade = self.bigquery_client.get_last_trade(symbol=symbol, broker="Bybit")
 
-            if open_position.open_sl < open_position.size:
+            if open_position.open_sl > 0:
                 bybit.fill_position_with_defined_trade(
                     symbol=symbol,
                     open_position=open_position,
@@ -122,7 +123,7 @@ class Scalbot(BaseModel, ABC):
                 )
                 stop_loss = sls[0]
 
-                if are_prices_equal_enough(trade.price, float(stop_loss.stop_px)):
+                if not are_prices_equal_enough(trade.price, float(stop_loss.stop_px)):
                     logger.info(
                         "Take Profit Level 1 has been reached, but Stop Loss is still the "
                         "original. Stop Loss will be cancelled and set to the trade price"
@@ -235,47 +236,82 @@ class Scalbot(BaseModel, ABC):
         self, position: OpenPosition, orders: list[ActiveOrder], trade: Trade
     ) -> Tuple[dict, int]:
 
-        matched_orders = {}
-
-        filled_position_size = 0
         required_take_profit_levels, reached_level = self.find_open_take_profits(
             position=position, trade=trade
         )
+        merged_orders = merge_take_profits_with_same_price(orders)
 
         order_list = {
             order.order_id: dict(price=order.price, qty=order.qty) for order in orders
         }
         logger.info(f"Retrieved open Take Profit orders {order_list}")
 
-        for level in required_take_profit_levels:
-            tp_price = getattr(trade, level)
-            tp_size = getattr(trade, f"{level}_share")
+        matched_orders = {}
+        filled_position_size = 0
 
-            if filled_position_size == position.size:
-                matched_orders[level] = "order_already_filled"
+        if position.open_tp == 0:
 
-            next_take_profit = next(
-                (
-                    order
-                    for order in orders
-                    if float(order.price) == float(tp_price)
-                    and int(order.qty) == int(tp_size)
-                ),
-                None,
-            )
-            if next_take_profit:
-                filled_position_size += tp_size
-                matched_orders[level] = "order_set"
-                logger.info(
-                    f"Take Profit Level {level[-1]} of price {tp_price} and "
-                    f"size {tp_size} is already set!"
+            for level in required_take_profit_levels:
+                tp_price = getattr(trade, level)
+                tp_size = getattr(trade, f"{level}_share")
+
+                if filled_position_size == position.size:
+                    matched_orders[level] = "order_already_filled"
+
+                next_take_profit = next(
+                    (order for order in merged_orders if order.price == tp_price),
+                    None,
                 )
-            else:
-                matched_orders[level] = "order_not_set"
-                logger.info(
-                    f"Take Profit Level {level[-1]} of price {tp_price} and "
-                    f"size {tp_size} cannot be matched yet!"
+                if next_take_profit:
+                    if next_take_profit.qty == tp_size:
+                        logger.info(
+                            f"Take Profit Level {level[-1]} of price {tp_price} and "
+                            f"size {tp_size} is already set!"
+                        )
+                    else:
+                        logger.info(
+                            f"Take Profit Level {level[-1]} of price {tp_price} and is already "
+                            f"set but with a different size {next_take_profit.qty}!"
+                        )
+                    filled_position_size += tp_size
+                    matched_orders[level] = "order_set"
+                else:
+                    matched_orders[level] = "order_not_set"
+                    logger.info(
+                        f"Take Profit Level {level[-1]} of price {tp_price} and "
+                        f"size {tp_size} cannot be matched yet!"
+                    )
+
+        else:
+
+            for level in required_take_profit_levels:
+                tp_price = getattr(trade, level)
+                tp_size = getattr(trade, f"{level}_share")
+
+                if filled_position_size == position.size:
+                    matched_orders[level] = "order_already_filled"
+
+                next_take_profit = next(
+                    (
+                        order
+                        for order in merged_orders
+                        if order.price == float(tp_price) and order.qty == int(tp_size)
+                    ),
+                    None,
                 )
+                if next_take_profit:
+                    filled_position_size += tp_size
+                    matched_orders[level] = "order_set"
+                    logger.info(
+                        f"Take Profit Level {level[-1]} of price {tp_price} and "
+                        f"size {tp_size} is already set!"
+                    )
+                else:
+                    matched_orders[level] = "order_not_set"
+                    logger.info(
+                        f"Take Profit Level {level[-1]} of price {tp_price} and "
+                        f"size {tp_size} cannot be matched yet!"
+                    )
 
         return matched_orders, reached_level
 
@@ -565,3 +601,19 @@ def cancel_invalid_expired_orders(
         )
 
     return cancelled_orders
+
+
+def merge_take_profits_with_same_price(
+    orders: list[ActiveOrder],
+) -> list[MinifiedOrder]:
+    summed_orders: dict[str, float] = {}
+    for order in orders:
+        summed_orders[str(order.price)] = (
+            summed_orders.get(str(order.price), 0) + order.qty
+        )
+
+    result = [
+        MinifiedOrder(price=float(price), qty=int(round(qty)))
+        for price, qty in summed_orders.items()
+    ]
+    return result
