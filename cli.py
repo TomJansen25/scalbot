@@ -84,7 +84,7 @@ def get_save_historic_data(symbol: Symbol):
 
     datestamp = datetime.now().strftime("%Y%m%d")
     save_path = f"data/{symbol.value}_1min_historical_data_{datestamp}.csv.gz"
-    df.to_csv(save_path, compression="gzip")
+    df.to_csv(save_path, compression="gzip", index=False)
     typer.echo(f"Data retrieved and saved to {save_path}")
 
 

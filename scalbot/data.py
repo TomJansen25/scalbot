@@ -1,3 +1,4 @@
+import os
 import tempfile
 from abc import ABC
 from datetime import timedelta
@@ -15,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from scalbot.enums import Broker, Symbol
 from scalbot.models import Candle
+from scalbot.utils import get_project_dir
 
 
 class Data(ABC, BaseModel):
@@ -22,6 +24,7 @@ class Data(ABC, BaseModel):
     Base Data Class
     """
 
+    _data_dir = get_project_dir().joinpath("data")
     candle_frequency: int = Field(default=1, ge=1, le=60)
     symbol: Symbol = Symbol.BTCUSD
     broker: Broker = Broker.BYBIT
@@ -91,15 +94,12 @@ class Data(ABC, BaseModel):
         """
         if isinstance(self.candles, pd.DataFrame):
             df = self.candles.set_index(self.candles.start, drop=True).copy()
-            ohlc = {
-                "open": "first",
-                "high": "max",
-                "low": "min",
-                "close": "last",
-            }
+            ohlc = {"open": "first", "high": "max", "low": "min", "close": "last"}
             if "volume" in df.columns:
                 ohlc["volume"] = "sum"
             new_df = df.resample(f"{new_frequency}min").apply(ohlc).reset_index()
+            new_df["end"] = new_df.start + timedelta(minutes=new_frequency)
+            new_df["symbol"] = self.symbol.value
             self.candles = new_df
         else:
             raise Warning("No data in candles object yet, first load a DataFrame!")
@@ -111,6 +111,22 @@ class HistoricData(Data):
     """
 
     bybit_data_url = "https://public.bybit.com/spot_index/"
+
+    def get_latest_local_data(self):
+        files = list(self._data_dir.glob("*.csv.gz"))
+        relevant_files = [file for file in files if self.symbol.value in file.stem]
+        latest_file = max(relevant_files, key=os.path.getctime)
+        logger.info(
+            f"Retrieved latest file with historic data for {self.symbol.value}: {latest_file}"
+        )
+
+        df = pd.read_csv(latest_file, compression="gzip")
+        df.start = pd.to_datetime(df.start)
+        df.end = pd.to_datetime(df.end)
+
+        if not self.candles:
+            self.candles = df
+        return df
 
     def is_symbol_data_to_download(self):
         if self.broker == Broker.BYBIT:
