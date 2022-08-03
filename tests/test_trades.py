@@ -37,6 +37,9 @@ def sample_trade(
     )
 
 
+########## UNIT TESTS ##########
+
+
 @pytest.mark.parametrize(
     "test_input, expected",
     [
@@ -91,3 +94,6 @@ def test_round_trade_prices(test_input: float, expected: float):
 )
 def test_divide_quantity_over_shares(test_input, expected):
     assert divide_quantity_over_shares(**test_input) == expected
+
+
+########## INTEGRATION TESTS ##########

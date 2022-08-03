@@ -5,4 +5,4 @@ from scalbot.bigquery import BigQuery
 from scalbot.bybit import Bybit
 from scalbot.data import Data, HistoricData
 from scalbot.scalbot import Scalbot
-from scalbot.trades import TradingStrategy
+from scalbot.trades import TradeCalculator, TradeSummarizer
