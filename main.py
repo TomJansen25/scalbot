@@ -8,7 +8,7 @@ from scalbot.bybit import Bybit
 from scalbot.enums import Broker, Symbol
 from scalbot.mail import Email
 from scalbot.scalbot import Scalbot, cancel_invalid_expired_orders
-from scalbot.trades import TradeSummary, TradingStrategy
+from scalbot.trades import TradeCalculator, TradeSummarizer
 from scalbot.utils import get_params, setup_logging
 
 load_dotenv()
@@ -34,7 +34,7 @@ def run_bybit_bot(event: dict, context):
     for symbol in SYMBOLS:
         symbol_params = params[symbol.value]
 
-        trading_strategy = TradingStrategy(**symbol_params.get("trading_strategy"))
+        trading_strategy = TradeCalculator(**symbol_params.get("trading_strategy"))
 
         scalbot = Scalbot(
             trading_strategy=trading_strategy, **symbol_params.get("scalbot")
@@ -59,7 +59,9 @@ def send_daily_summary(event, context):
         f"FUNCTION CONTEXT: triggered by message with event id {context.event_id} "
         f"published at {context.timestamp} to {context.resource['name']}"
     )
-    trade_summarizer = TradeSummary(broker=Broker.BYBIT, symbols=SYMBOLS, bybit=BYBIT)
+    trade_summarizer = TradeSummarizer(
+        broker=Broker.BYBIT, symbols=SYMBOLS, bybit=BYBIT
+    )
     trade_summary_df = trade_summarizer.get_trade_summary_as_df()
 
     email = "tomjansen25@gmail.com"

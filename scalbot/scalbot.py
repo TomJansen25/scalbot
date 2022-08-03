@@ -26,7 +26,7 @@ from scalbot.models import (
     Trade,
 )
 from scalbot.technical_indicators import calc_sma
-from scalbot.trades import TradingStrategy
+from scalbot.trades import TradeCalculator
 from scalbot.utils import (
     are_prices_equal_enough,
     get_percentage_occurrences,
@@ -40,32 +40,32 @@ class Scalbot(BaseModel, ABC):
     """
 
     patterns: list[dict] = Field(default_factory=list)
-    trading_strategy: TradingStrategy
+    trade_calculator: TradeCalculator
     candle_frequency: int = Field(default=1, gt=0)
     bigquery_client: BigQuery
 
     def __init__(
         self,
         patterns: list[dict],
-        trading_strategy: TradingStrategy,
+        trade_calculator: TradeCalculator,
         candle_frequency: int,
     ):
         """
 
         :param patterns:
-        :param trading_strategy:
+        :param trade_calculator:
         :param candle_frequency: minute frequency of candles to be retrieved (1, 3, 5, or 15)
         """
         super().__init__(
             patterns=patterns,
-            trading_strategy=trading_strategy,
+            trade_calculator=trade_calculator,
             candle_frequency=candle_frequency,
             bigquery_client=BigQuery(),
         )
 
-    def update_trading_strategy(self, trading_strategy: TradingStrategy):
-        logger.info("Trading strategy updated!")
-        self.trading_strategy = trading_strategy
+    def update_trade_calculator(self, trade_calculator: TradeCalculator):
+        logger.info("Trade Calculator updated!")
+        self.trade_calculator = trade_calculator
 
     @logger.catch
     def run_bybit_bot(self, bybit: Bybit, symbol: Symbol = Symbol.BTCUSD):
@@ -183,7 +183,7 @@ class Scalbot(BaseModel, ABC):
                 ) = self.evaluate_candle(candle=candle, df=df)
 
                 if make_trade:
-                    new_trade = self.trading_strategy.define_trade(
+                    new_trade = self.trade_calculator.define_trade(
                         trade_side=trade_side,
                         candle=trade_candle,
                         pattern=pattern,

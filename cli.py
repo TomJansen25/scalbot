@@ -1,3 +1,4 @@
+import os
 import time
 from datetime import datetime
 from pathlib import Path
@@ -12,7 +13,7 @@ from scalbot.data import HistoricData
 from scalbot.enums import Broker, Symbol
 from scalbot.mail import Email
 from scalbot.scalbot import Scalbot, cancel_invalid_expired_orders
-from scalbot.trades import TradeSummary, TradingStrategy
+from scalbot.trades import TradeCalculator, TradeSummarizer
 from scalbot.utils import get_params, setup_logging
 
 load_dotenv()
@@ -71,7 +72,7 @@ def generate_event_context() -> Tuple[dict, dict]:
 
 
 @app.command()
-def get_save_historic_data(symbol: Symbol):
+def get_historic_data(symbol: Symbol):
 
     typer.echo(f"Retrieving and saving historical data for {symbol.value}")
     data = HistoricData(symbol=symbol)
@@ -95,11 +96,11 @@ def run_bybit_bot_from_cli(
     risk: float = 0.01,
     candle_frequency: int = 1,
 ):
-    trading_strategy = TradingStrategy(bet_amount=bet_amount, risk=risk)
+    trade_calculator = TradeCalculator(bet_amount=bet_amount, risk=risk)
 
     scalbot = Scalbot(
         patterns=V_PATTERNS,
-        trading_strategy=trading_strategy,
+        trading_strategy=trade_calculator,
         candle_frequency=candle_frequency,
     )
 
@@ -122,10 +123,10 @@ def run_bybit_bot_from_params_from_cli(symbols: list[Symbol]):
         for symbol in symbols:
             symbol_params = params[symbol.value]
 
-            trading_strategy = TradingStrategy(**symbol_params.get("trading_strategy"))
+            trade_calculator = TradeCalculator(**symbol_params.get("trading_strategy"))
 
             scalbot = Scalbot(
-                trading_strategy=trading_strategy, **symbol_params.get("scalbot")
+                trading_strategy=trade_calculator, **symbol_params.get("scalbot")
             )
 
             typer.echo(
@@ -148,7 +149,7 @@ def test_cancel_invalid_expired_orders(symbols: list[Symbol]):
 def test_send_daily_summary(symbol: list[Symbol], broker: Broker = Broker.BYBIT.value):
     bybit = Bybit()
 
-    trade_summarizer = TradeSummary(broker=broker, symbols=symbol, bybit=bybit)
+    trade_summarizer = TradeSummarizer(broker=broker, symbols=symbol, bybit=bybit)
     trade_summary_df = trade_summarizer.get_trade_summary_as_df()
 
     template = "daily_trade_summary"
